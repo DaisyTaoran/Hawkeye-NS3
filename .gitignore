@@ -1,0 +1,9 @@
+build/
+.waf-*/
+
+*.pyc
+*.txt
+*.tr
+*.pcap
+
+.lock-waf_linux2_build
