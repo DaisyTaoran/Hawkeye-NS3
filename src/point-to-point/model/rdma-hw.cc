@@ -371,15 +371,15 @@ int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){
 		qp->m_rate = dev->GetDataRate();
 		if (m_cc_mode == 1){
 			qp->mlx.m_targetRate = dev->GetDataRate();
-		}else if (m_cc_mode == 3){
+		}else if (m_cc_mode == 3){	// 拥塞控制模式可能是 hpcc, use int
 			qp->hp.m_curRate = dev->GetDataRate();
 			if (m_multipleRate){
 				for (uint32_t i = 0; i < IntHeader::maxHop; i++)
 					qp->hp.hopState[i].Rc = dev->GetDataRate();
 			}
-		}else if (m_cc_mode == 7){
+		}else if (m_cc_mode == 7){	// 拥塞控制模式可能是 timely, use ts
 			qp->tmly.m_curRate = dev->GetDataRate();
-		}else if (m_cc_mode == 10){
+		}else if (m_cc_mode == 10){	// 拥塞控制模式可能是 hpcc-pint
 			qp->hpccPint.m_curRate = dev->GetDataRate();
 		}
 	}
@@ -423,7 +423,7 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 		} 
 	}
 
-	//RDMA NPA agent;
+	//RDMA NPA agent; agent是一个完全自主的系统，能够在长时间内独立运行，通常会牺牲延迟和成本来换取更好的任务性能
 	if(m_agent_flag){
 		uint64_t rtt = Simulator::Now().GetTimeStep() - ch.ack.ih.ts;
 		uint64_t interval = Simulator::Now().GetTimeStep() - qp->npa.m_lastPollingTime;
@@ -456,13 +456,13 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 		}
 	}
 
-	if (m_cc_mode == 3){
+	if (m_cc_mode == 3){		// 拥塞控制模式可能是 hpcc, use int
 		HandleAckHp(qp, p, ch);
-	}else if (m_cc_mode == 7){
+	}else if (m_cc_mode == 7){	// 拥塞控制模式可能是 timely, use ts
 		HandleAckTimely(qp, p, ch);
 	}else if (m_cc_mode == 8){
 		HandleAckDctcp(qp, p, ch);
-	}else if (m_cc_mode == 10){
+	}else if (m_cc_mode == 10){	// 拥塞控制模式可能是 hpcc-pint
 		HandleAckHpPint(qp, p, ch);
 	}
 	// ACK may advance the on-the-fly window, allowing more packets to send

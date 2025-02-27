@@ -94,7 +94,7 @@ set<int> no_cc_nodes;
  ***********************************************/
 std::ifstream topof, flowf, tracef;
 
-NodeContainer n;
+NodeContainer n; // 在 network/helper/node-container.h 中
 
 uint64_t nic_rate;
 
@@ -130,7 +130,7 @@ struct FlowInput{
 FlowInput flow_input = {0};
 uint32_t flow_num;
 
-void ReadFlowInput(){
+void ReadFlowInput(){   // 从文件中读取一行流信息
 	if (flow_input.idx < flow_num){
 		flowf >> flow_input.src >> flow_input.dst >> flow_input.pg >> flow_input.dport >> flow_input.maxPacketCount >> flow_input.start_time;
 		NS_ASSERT(n.Get(flow_input.src)->GetNodeType() == 0 && n.Get(flow_input.dst)->GetNodeType() == 0);
@@ -145,7 +145,7 @@ void ScheduleFlowInputs(){
 
 		// get the next flow input
 		flow_input.idx++;
-		ReadFlowInput();
+		ReadFlowInput();        // 再读一行流信息，其中包括flow_input.start_time
 	}
 
 	// schedule the next time to run this function
@@ -708,7 +708,7 @@ int main(int argc, char *argv[])
 		// IntHeader::mode = IntHeader::NONE;
 		IntHeader::mode = IntHeader::TS;//RDMA NPA
 
-	// Set Pint
+	// Set Pint,PINT可能是一个带内网络遥测框架，允许每个数据包的信息量开销限低至1位，在P4中实现
 	if (cc_mode == 10){
 		Pint::set_log_base(pint_log_base);
 		IntHeader::pint_bytes = Pint::get_n_bytes();
@@ -736,7 +736,7 @@ int main(int argc, char *argv[])
 	}
 	for (uint32_t i = 0; i < node_num; i++){
 		if (node_type[i] == 0)
-			n.Add(CreateObject<Node>());
+			n.Add(CreateObject<Node>()); // 函数在 network/helper/node-container.h 中
 		else{
 			Ptr<SwitchNode> sw = CreateObject<SwitchNode>();
 			n.Add(sw);
@@ -888,7 +888,7 @@ int main(int argc, char *argv[])
 	// install RDMA driver
 	//
 	for (uint32_t i = 0; i < node_num; i++){
-		if (n.Get(i)->GetNodeType() == 0){ // is server
+		if (n.Get(i)->GetNodeType() == 0){ // is server, not switch
 			// create RdmaHw
 			Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();
 			rdmaHw->SetAttribute("ClampTargetRate", BooleanValue(clamp_target_rate));
@@ -923,14 +923,14 @@ int main(int argc, char *argv[])
 			if(no_cc_nodes.find(i) != no_cc_nodes.end())
 				rdmaHw->SetAttribute("CcMode", UintegerValue(0));
 			// create and install RdmaDriver
-			Ptr<RdmaDriver> rdma = CreateObject<RdmaDriver>();
-			Ptr<Node> node = n.Get(i);
-			rdma->SetNode(node);
-			rdma->SetRdmaHw(rdmaHw);
+			Ptr<RdmaDriver> rdma = CreateObject<RdmaDriver>(); // 新建一个 RDMA驱动
+			Ptr<Node> node = n.Get(i);      // 函数在     network/helper/node-container.h  中，node[i] is server，not switch
+			rdma->SetNode(node);            // 函数在 point-to-point/model/rdma-driver.h 中，把节点 node[i] 安装到RDMA驱动中
+			rdma->SetRdmaHw(rdmaHw);        // 函数在 point-to-point/model/rdma-driver.h 中，把   rdmaHw 网卡安装到RDMA驱动中
 
-			node->AggregateObject (rdma);
-			rdma->Init();
-			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output));
+			node->AggregateObject (rdma);   // 函数在 core/model/object.h 中，将构件（各种协议）聚合到节点 node[i] 中
+			rdma->Init();                   // 函数在 point-to-point/model/rdma-driver.h 中，根据已安装的 rdmaHw 网卡进行初始化
+			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output)); // 追踪绑定参数的回调qp_finish，但是不携带上下文信息
 		}
 	}
 	#endif
@@ -976,7 +976,7 @@ int main(int argc, char *argv[])
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 1){ // switch
 			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n.Get(i));
-			sw->SetAttribute("CcMode", UintegerValue(cc_mode));
+			sw->SetAttribute("CcMode", UintegerValue(cc_mode)); // 为交换机设置拥塞控制模式
 			sw->SetAttribute("MaxRtt", UintegerValue(maxRtt));
 		}
 	}
@@ -985,7 +985,7 @@ int main(int argc, char *argv[])
 	// add trace
 	//
 
-	NodeContainer trace_nodes;
+	NodeContainer trace_nodes; // 函数在  network/helper/node-container.h 中
 	for (uint32_t i = 0; i < trace_num; i++)
 	{
 		uint32_t nid;
@@ -993,12 +993,12 @@ int main(int argc, char *argv[])
 		if (nid >= n.GetN()){
 			continue;
 		}
-		trace_nodes = NodeContainer(trace_nodes, n.Get(nid));
+		trace_nodes = NodeContainer(trace_nodes, n.Get(nid));   // 函数在  network/helper/node-container.h 中，构造函数，构造作为参数的两个NodeContainer的串联
 	}
 
 	FILE *trace_output = fopen(trace_output_file.c_str(), "w");
 	if (enable_trace)
-		qbb.EnableTracing(trace_output, trace_nodes);
+		qbb.EnableTracing(trace_output, trace_nodes);           // 函数在 point-to-point/helper/qbb-helper.h 中,qbb是QbbHelper类，在trcae_output文件中输出跟踪信息
 
 	// dump link speed to trace file
 	{
@@ -1032,7 +1032,7 @@ int main(int argc, char *argv[])
 
 	flow_input.idx = 0;
 	if (flow_num > 0){
-		ReadFlowInput();
+		ReadFlowInput();        // 从文件中读取一行流信息，其中包括flow_input.start_time
 		Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs);
 	}
 
