@@ -406,7 +406,7 @@ namespace ns3 {
 		return true;
 	}
 
-	void QbbNetDevice::SendPfc(uint32_t qIndex, uint32_t type){
+	void QbbNetDevice::SendPfc(uint32_t qIndex, uint32_t type){     // 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包
 		Ptr<Packet> p = Create<Packet>(0);
 		PauseHeader pauseh((type == 0 ? m_pausetime : 0), m_queue->GetNBytes(qIndex), qIndex);
 		p->AddHeader(pauseh);
@@ -421,7 +421,7 @@ namespace ns3 {
 		AddHeader(p, 0x800);
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
 		p->PeekHeader(ch);
-		SwitchSend(0, p, ch);
+		SwitchSend(0, p, ch);   // 从队列0处发送数据包p
 	}
 
 	void QbbNetDevice::SendSignal(uint32_t qIndex, uint32_t rate, uint32_t epoch, uint32_t congestionPort, bool pfcOff){

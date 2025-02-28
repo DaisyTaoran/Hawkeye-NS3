@@ -84,8 +84,8 @@ namespace ns3 {
 
 		egress_queue_length[port][qIndex]--;
 	}
-	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){
-		return !paused[port][qIndex] && (hdrm_bytes[port][qIndex] > 0 || GetSharedUsed(port, qIndex) >= GetPfcThreshold(port));
+	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){	// 检查端口port、队列qIndex处，根据pfc阈值，决定是否要发暂停包
+		return !paused[port][qIndex] && (hdrm_bytes[port][qIndex] > 0 || GetSharedUsed(port, qIndex) >= GetPfcThreshold(port));	// 队列数量 > PFC阈值，就发暂停包
 	}
 	bool SwitchMmu::CheckShouldResume(uint32_t port, uint32_t qIndex){
 		if (!paused[port][qIndex])
@@ -93,7 +93,7 @@ namespace ns3 {
 		uint32_t shared_used = GetSharedUsed(port, qIndex);
 		return hdrm_bytes[port][qIndex] == 0 && (shared_used == 0 || shared_used + resume_offset <= GetPfcThreshold(port));
 	}
-	void SwitchMmu::SetPause(uint32_t port, uint32_t qIndex){
+	void SwitchMmu::SetPause(uint32_t port, uint32_t qIndex){	// 把端口port的队列qIndex设置为pause状态
 		paused[port][qIndex] = true;
 	}
 	void SwitchMmu::SetResume(uint32_t port, uint32_t qIndex){

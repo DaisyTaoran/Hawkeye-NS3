@@ -24,9 +24,9 @@ public:
 	void RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 	void RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 
-	bool CheckShouldPause(uint32_t port, uint32_t qIndex);
+	bool CheckShouldPause(uint32_t port, uint32_t qIndex);	// 检查端口port的队列qIndex处，根据pfc阈值，决定是否要发暂停包
 	bool CheckShouldResume(uint32_t port, uint32_t qIndex);
-	void SetPause(uint32_t port, uint32_t qIndex);
+	void SetPause(uint32_t port, uint32_t qIndex);		// 把端口port的队列qIndex设置为pause状态
 	void SetResume(uint32_t port, uint32_t qIndex);
 	//void GetPauseClasses(uint32_t port, uint32_t qIndex);
 	//bool GetResumeClasses(uint32_t port, uint32_t qIndex);

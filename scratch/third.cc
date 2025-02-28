@@ -839,8 +839,8 @@ int main(int argc, char *argv[])
 		ipv4.Assign(d);
 
 		// setup PFC trace
-		DynamicCast<QbbNetDevice>(d.Get(0))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(0))));
-		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1))));
+		DynamicCast<QbbNetDevice>(d.Get(0))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(0)))); // pfc.txt
+		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1)))); // pfc.txt
 	}
 
 	nic_rate = get_nic_rate(n);
@@ -876,7 +876,7 @@ int main(int argc, char *argv[])
 
 			//RDMA NPA detect temp
 			char telemetry_path[100];
-			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);
+			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);     // 每个switch有一个telemetry文件
 			sw->fp_telemetry = fopen(telemetry_path, "w");
 
 		}
@@ -930,7 +930,7 @@ int main(int argc, char *argv[])
 
 			node->AggregateObject (rdma);   // 函数在 core/model/object.h 中，将构件（各种协议）聚合到节点 node[i] 中
 			rdma->Init();                   // 函数在 point-to-point/model/rdma-driver.h 中，根据已安装的 rdmaHw 网卡进行初始化
-			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output)); // 追踪绑定参数的回调qp_finish，但是不携带上下文信息
+			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output)); // 追踪绑定参数的回调qp_finish，但是不携带上下文信息；fct.txt
 		}
 	}
 	#endif

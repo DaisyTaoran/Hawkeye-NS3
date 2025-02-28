@@ -125,7 +125,7 @@ public:
    void ReassignedQp(Ptr<RdmaQueuePair> qp);
    void TriggerTransmit(void);
 
-	void SendPfc(uint32_t qIndex, uint32_t type); // type: 0 = pause, 1 = resume
+   void SendPfc(uint32_t qIndex, uint32_t type); // type: 0 = pause, 1 = resume。 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包？
 
   // RDMA NPA
   bool GetEgressPaused(uint32_t qIndex);

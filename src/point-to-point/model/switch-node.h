@@ -13,39 +13,39 @@ class Packet;
 
 class SwitchNode : public Node{
 	static const uint32_t pCnt = 257;	// Number of ports used
-	static const uint32_t qCnt = 8;	// Number of queues/priorities used
-	uint32_t m_ecmpSeed;
-	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev)
+	static const uint32_t qCnt = 8;		// Number of queues/priorities used
+	uint32_t m_ecmpSeed;			// 用于计算hash值。ECMP=等价多路径路由
+	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev) 可能是IP路由表
 
 	// monitor of PFC
-	uint32_t m_bytes[pCnt][pCnt][qCnt]; // m_bytes[inDev][outDev][qidx] is the bytes from inDev enqueued for outDev at qidx
+	uint32_t m_bytes[pCnt][pCnt][qCnt]; 	// m_bytes[inDev][outDev][qidx] 是来自inDev的bytes，在 qidx排队等待 outDev 
 	
-	uint64_t m_txBytes[pCnt]; // counter of tx bytes
+	uint64_t m_txBytes[pCnt]; 	// counter of tx bytes
 
 	uint32_t m_lastPktSize[pCnt];
-	uint64_t m_lastPktTs[pCnt]; // ns
+	uint64_t m_lastPktTs[pCnt]; 	// ns
 	double m_u[pCnt];
 
 
 	// RDMA NPA
 	static const uint32_t flowHashSeed = 0x233;	// Seed for flow hash
 	static const uint32_t flowEntryNum = (1 << 10);	// Number of flowTelemetryData entries
-	static const uint32_t epoch = 1000000;	// 
-	static const uint32_t epochNum = 2;	//
-	static const uint32_t egressThreshold = 64 * 1024;	// signal threshold??
+	static const uint32_t epoch = 1000000;		// 可能是时间戳
+	static const uint32_t epochNum = 2;	
+	static const uint32_t egressThreshold = 64 * 1024;	// signal threshold 信号阈值
 	static const uint32_t rateThreshold = 1024 * 1024 * 1024 * epoch / 1000000000 / 8;	// rate threshold??	1Gbps
 	// static const uint32_t pausedPacketThreshold = 10;	// pfc paused packet threshold
-	static const uint32_t portToPortSlot = 5;	// port to port bytes slot
-	uint64_t m_lastSignalEpoch;	// last signal time
-	uint32_t m_slotIdx;	// current epoch index
+	static const uint32_t portToPortSlot = 5;		// port to port bytes slot
+	uint64_t m_lastSignalEpoch;		// last signal time
+	uint32_t m_slotIdx;			// current epoch index
 	uint64_t m_lastPollingEpoch[pCnt];	// last polling epoch
 
-	struct FiveTuple{
-		uint32_t srcIp;
-		uint32_t dstIp;
-		uint16_t srcPort;
-		uint16_t dstPort;
-		uint8_t protocol;
+	struct FiveTuple{		// 五元组
+		uint32_t srcIp;			// 源ip
+		uint32_t dstIp;			// 目的ip
+		uint16_t srcPort;		// 源端口
+		uint16_t dstPort;		// 目的端口
+		uint8_t protocol;		// 协议
 		bool operator==(const FiveTuple &other) const{
 			return srcIp == other.srcIp
 				&& dstIp == other.dstIp 
@@ -55,27 +55,27 @@ class SwitchNode : public Node{
 		}
 	};
 	
-	struct FlowTelemetryData{
-		uint16_t minSeq;           // 16-bit min_seq
-		uint16_t maxSeq;           // 16-bit max_seq
-		uint32_t packetNum;		// 32-bit packet_num
-		uint32_t enqQdepth;		// 32-bit enq_q_depth
-		uint32_t pfcPausedPacketNum;	// 32-bit pfc_paused_packet_num
+	struct FlowTelemetryData{	// 流水平遥测数据[五元组哈希值]
+		uint16_t minSeq;           	// 16-bit min_seq		序列号范围
+		uint16_t maxSeq;           	// 16-bit max_seq		序列号范围
+		uint32_t packetNum;		// 32-bit packet_num		数据包数量
+		uint32_t enqQdepth;		// 32-bit enq_q_depth		总排队深度
+		uint32_t pfcPausedPacketNum;	// 32-bit pfc_paused_packet_num	PFC暂停包数量
 
-		FiveTuple flowTuple;			// 5-tuple
+		FiveTuple flowTuple;		// 5-tuple			五元组
 		uint64_t lastTimeStep;		// last timestep
 	};
-	struct PortTelemetryData{
-		uint32_t enqQdepth;		// 32-bit enq_q_depth
-		uint32_t pfcPausedPacketNum;
+	struct PortTelemetryData{	// 端口水平遥测数据[端口号]
+		uint32_t enqQdepth;		// 32-bit enq_q_depth		出口队列长度
+		uint32_t pfcPausedPacketNum;	//				PFC暂停包数量
 
 		uint32_t lastTimeStep;		// last timestep >> 5
 	};
-	FlowTelemetryData m_flowTelemetryData[pCnt][epochNum][flowEntryNum]; // flow telemetry data
-	PortTelemetryData m_portTelemetryData[epochNum][pCnt]; // port telemetry data
-	uint32_t m_portToPortBytes[pCnt][pCnt]; // bytes from port to port
+	FlowTelemetryData m_flowTelemetryData[pCnt][epochNum][flowEntryNum]; 	// flow telemetry data
+	PortTelemetryData m_portTelemetryData[epochNum][pCnt]; 			// port telemetry data
+	uint32_t m_portToPortBytes[pCnt][pCnt]; 			// bytes from port to port
 
-	uint32_t m_portToPortBytesSlot[pCnt][pCnt][portToPortSlot]; // port to port bytes slot
+	uint32_t m_portToPortBytesSlot[pCnt][pCnt][portToPortSlot]; 	// port to port bytes slot
 
 protected:
 	bool m_ecnEnabled;
@@ -85,9 +85,9 @@ protected:
 	uint32_t m_ackHighPrio; // set high priority for ACK/NACK
 
 private:
-	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);
+	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);				// 根据目的ip等，返回下一跳出口的端口号
 	void SendToDev(Ptr<Packet>p, CustomHeader &ch);
-	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);
+	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值
 	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);
 	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);
 	// RDMA NPA
@@ -95,7 +95,7 @@ private:
 	static uint32_t GetEpochIdx();
 
 public:
-	Ptr<SwitchMmu> m_mmu;
+	Ptr<SwitchMmu> m_mmu;		// 可能是内存管理单元
 
 	static TypeId GetTypeId (void);
 	SwitchNode();
@@ -110,7 +110,7 @@ public:
 	int log2apprx(int x, int b, int m, int l); // given x of at most b bits, use most significant m bits of x, calc the result in l bits
 
 	// for RDMA NPA detect
-	FILE *fp_telemetry = NULL;
+	FILE *fp_telemetry = NULL;	// 文件名为telemetry_x.txt，其中x=node_number
 };
 
 } /* namespace ns3 */

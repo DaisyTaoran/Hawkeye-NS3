@@ -82,21 +82,21 @@ SwitchNode::SwitchNode(){
 	m_lastSignalEpoch = 0;
 }
 
-int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
+int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下一跳出口
 	// look up entries
-	auto entry = m_rtTable.find(ch.dip);
+	auto entry = m_rtTable.find(ch.dip);	// 在路由表中，根据目的ip找到下一跳的入口 vector
 
 	// no matching entry
-	if (entry == m_rtTable.end())
+	if (entry == m_rtTable.end())		// 在路由表中，此目的ip没有对应的下一跳入口
 		return -1;
 
 	// entry found
-	auto &nexthops = entry->second;
+	auto &nexthops = entry->second;		// 下一跳vector
 
-	// pick one next hop based on hash
-	union {
-		uint8_t u8[4+4+2+2];
-		uint32_t u32[3];
+	// pick one next hop based on hash 	基于hash找到下一跳
+	union {	// union中各参数内存首地址相同
+		uint8_t u8[4+4+2+2];		// [][][][] [][][][] [][][][]
+		uint32_t u32[3];		// u32[2]   ch.dip   ch.sip
 	} buf;
 	buf.u32[0] = ch.sip;
 	buf.u32[1] = ch.dip;
@@ -107,15 +107,15 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
 	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
 		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
 
-	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();
+	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();	// 根据源和目的ip、port进行hash，找到vector中的一个数
 	return nexthops[idx];
 }
 
 void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){
-	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);
-	if (m_mmu->CheckShouldPause(inDev, qIndex)){
-		device->SendPfc(qIndex, 0);
-		m_mmu->SetPause(inDev, qIndex);
+	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
+	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 检查端口inDev的队列qIndex的队列长度，看其是否要Pause
+		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包
+		m_mmu->SetPause(inDev, qIndex);			// 把端口inDev的队列qIndex设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
 	}
 }
 void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
@@ -199,13 +199,13 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		}
 		return;	
 	}
-	//RDMA NPA : polling packet parse 
+	//RDMA NPA : polling packet parse 轮询包分析
 	else if(ch.l3Prot == 0xFA){
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();
 		int idx = GetOutDev(p, ch);
-		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){
+		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){	
 			DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 		}
 		int epoch = GetEpochIdx();

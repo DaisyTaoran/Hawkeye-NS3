@@ -155,9 +155,9 @@ public:
   static void DropDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx);
   static void QpDequeueCallback(FILE *file, Ptr<QbbNetDevice>, Ptr<const Packet>, Ptr<RdmaQueuePair>);
 
-  void EnableTracingDevice(FILE *file, Ptr<QbbNetDevice>);
+  void EnableTracingDevice(FILE *file, Ptr<QbbNetDevice>);      // 被EnableTracing调用
 
-  void EnableTracing(FILE *file, NodeContainer node_container);
+  void EnableTracing(FILE *file, NodeContainer node_container); // 在three.cc中调用，向mix.tr输出trce信息；调用了EnableTracingDevice
 
 private:
   /**
