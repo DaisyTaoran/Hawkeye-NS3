@@ -110,7 +110,7 @@ public:
 	int log2apprx(int x, int b, int m, int l); // given x of at most b bits, use most significant m bits of x, calc the result in l bits
 
 	// for RDMA NPA detect
-	FILE *fp_telemetry = NULL;	// 文件名为telemetry_x.txt，其中x=node_number
+	FILE *fp_telemetry = NULL;	// 文件名为telemetry_x.txt，其中x=node_number，在third.cc中有定义
 };
 
 } /* namespace ns3 */

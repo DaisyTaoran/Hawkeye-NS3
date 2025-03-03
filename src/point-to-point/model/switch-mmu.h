@@ -19,8 +19,8 @@ public:
 
 	bool CheckIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 	bool CheckEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
-	void UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
-	void UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
+	void UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新入口准入
+	void UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新出口准入
 	void RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 	void RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 
@@ -54,8 +54,8 @@ public:
 	uint32_t total_rsrv;
 
 	// runtime
-	uint32_t shared_used_bytes;
-	uint32_t hdrm_bytes[pCnt][qCnt];
+	uint32_t shared_used_bytes;		// 可能是共享缓冲区中已使用的字节数
+	uint32_t hdrm_bytes[pCnt][qCnt];	// 可能是数据包中协议头部的字节数，包含控制信息（如源地址、目的地址、序列号等）
 	uint32_t ingress_bytes[pCnt][qCnt];
 	uint32_t paused[pCnt][qCnt];
 	uint32_t egress_bytes[pCnt][qCnt];

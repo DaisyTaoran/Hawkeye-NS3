@@ -49,23 +49,23 @@ namespace ns3 {
 	bool SwitchMmu::CheckEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
 		return true;
 	}
-	void SwitchMmu::UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
-		uint32_t new_bytes = ingress_bytes[port][qIndex] + psize;
-		if (new_bytes <= reserve){
+	void SwitchMmu::UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新入口准入，被switch-node.cc的SendToDev函数调用
+		uint32_t new_bytes = ingress_bytes[port][qIndex] + psize;	// psize=数据包的大小
+		if (new_bytes <= reserve){	// 若入口总大小<=reserve，则正常接收数据包
 			ingress_bytes[port][qIndex] += psize;
-		}else {
-			uint32_t thresh = GetPfcThreshold(port);
-			if (new_bytes - reserve > thresh){
-				hdrm_bytes[port][qIndex] += psize;
-			}else {
-				ingress_bytes[port][qIndex] += psize;
-				shared_used_bytes += std::min(psize, new_bytes - reserve);
+		}else {				// 若入口总大小>reserve，则
+			uint32_t thresh = GetPfcThreshold(port);	
+			if (new_bytes - reserve > thresh){	// 若入口超出的量 > 端口port的pfc阈值
+				hdrm_bytes[port][qIndex] += psize;	// PFC帧头部字节数 + psize
+			}else {					// 若入口超出的量 <= 端口port的pfc阈值
+				ingress_bytes[port][qIndex] += psize;	// 正常接收数据包
+				shared_used_bytes += std::min(psize, new_bytes - reserve); // 更新共享缓冲区已使用字节数	
 			}
 		}
 
-		ingress_queue_length[port][qIndex]++;
-	}
-	void SwitchMmu::UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
+		ingress_queue_length[port][qIndex]++;	// 入口队列长度 + 1
+	}// PFC是在交换机入口发起的拥塞管理机制。无拥塞时，入口 buffer不需存储。当出口buffer达到一定阈值，入口 buffer开始积累。当入口 buffer达到阈值，入口开始主动迫使它的上级端口降速。
+	void SwitchMmu::UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新出口准入，被switch-node.cc的SendToDev函数调用
 		egress_bytes[port][qIndex] += psize;
 
 		egress_queue_length[port][qIndex]++;
@@ -84,8 +84,8 @@ namespace ns3 {
 
 		egress_queue_length[port][qIndex]--;
 	}
-	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){	// 检查端口port、队列qIndex处，根据pfc阈值，决定是否要发暂停包
-		return !paused[port][qIndex] && (hdrm_bytes[port][qIndex] > 0 || GetSharedUsed(port, qIndex) >= GetPfcThreshold(port));	// 队列数量 > PFC阈值，就发暂停包
+	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){	// 若端口队列此时无暂停包，且(pfc帧头部>0)或(缓冲>pfc阈值)，就发pause包
+		return !paused[port][qIndex] && (hdrm_bytes[port][qIndex] > 0 || GetSharedUsed(port, qIndex) >= GetPfcThreshold(port));	
 	}
 	bool SwitchMmu::CheckShouldResume(uint32_t port, uint32_t qIndex){
 		if (!paused[port][qIndex])

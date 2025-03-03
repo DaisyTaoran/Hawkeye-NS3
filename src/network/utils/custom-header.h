@@ -100,7 +100,7 @@ public:
 		  uint16_t urgentPointer;     //!< Urgent pointer
 		  uint8_t optionBuf[32]; // buffer for storing raw options
 	  } tcp;
-	  struct {
+	  struct { // 96+IntHeader
 		  uint16_t sport;        //!< Source port
 		  uint16_t dport;   //!< Destination port
 		  uint16_t payload_size;
@@ -110,7 +110,7 @@ public:
 		  IntHeader ih;
 	  } udp;
 	  // CnHeader
-	  struct {
+	  struct { // 64
 		  uint16_t fid;
 		  uint8_t qIndex;
 		  uint16_t qfb;
@@ -118,7 +118,7 @@ public:
 		  uint16_t total;
 	  } cnp;
 	  // qbbHeader
-	  struct {
+	  struct { // 80+IntHeader
 		  uint16_t sport, dport;
 		  uint16_t flags;
 		  uint16_t pg;
@@ -133,7 +133,7 @@ public:
 	  } pfc;
 
     //RDMA NPA Header TODO
-    struct {
+    struct { // 112
       uint32_t epochID;
       uint32_t flowRate;
       uint8_t congestionPort : 7;
@@ -142,7 +142,7 @@ public:
       uint32_t lastTimeStep;
     } signal; //l3Port = 0xFB
 
-    struct {
+    struct { // 32
       uint32_t seq;
     } polling; //l3Port = 0xFA
     

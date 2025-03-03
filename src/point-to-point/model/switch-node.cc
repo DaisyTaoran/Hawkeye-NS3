@@ -107,13 +107,13 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下�
 	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
 		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
 
-	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();	// 根据源和目的ip、port进行hash，找到vector中的一个数
+	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();	// 根据源和目的ip、port进行hash，找到vector中的一个数 
 	return nexthops[idx];
 }
 
-void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){
+void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){	// 据UpdateIngressAdmission：若超出pfc阈值，pfc帧头部字节数增加psize
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
-	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 检查端口inDev的队列qIndex的队列长度，看其是否要Pause
+	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 检查，若要发Pause包
 		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包
 		m_mmu->SetPause(inDev, qIndex);			// 把端口inDev的队列qIndex设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
 	}
@@ -128,7 +128,7 @@ void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 
 void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 
-	//RDMA NPA : signal packet parse
+	//RDMA NPA : signal packet parse 信号数据包解析
 	if (ch.l3Prot == 0xFB){
 		FlowIdTag t;
 		p->PeekPacketTag(t);
@@ -204,17 +204,17 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();
-		int idx = GetOutDev(p, ch);
-		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){	
+		int idx = GetOutDev(p, ch);	// 根据目的ip等，返回下一跳出口的端口号
+		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){	// 端口水平遥测数据的pfc pause包
 			DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 		}
-		int epoch = GetEpochIdx();
+		int epoch = GetEpochIdx();	// 时间戳，一般是模拟时间的基准点
 
 		fprintf(fp_telemetry,"\n\npolling\nepoch %d\n", epoch);
 		
 		fprintf(fp_telemetry,"\n\npolling\nflow telemetry data for port %d\n", idx);
 		fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
-		for(int i = 0; i < flowEntryNum; i++){
+		for(int i = 0; i < flowEntryNum; i++){	// 遍历流水平遥测数据的入口
 			if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 				fprintf(fp_telemetry, "%d ", i);
 				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
@@ -241,7 +241,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 
 		fprintf(fp_telemetry,"\n\npolling\nflow telemetry data for port %d\n", idx);
 		fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
-		for(int i = 0; i < flowEntryNum; i++){
+		for(int i = 0; i < flowEntryNum; i++){	// 换个时间戳，遍历流水平遥测数据的入口
 			if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 				fprintf(fp_telemetry, "%d ", i);
 				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
@@ -263,45 +263,45 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		fprintf(fp_telemetry, "%d\n", m_portTelemetryData[epoch][idx].pfcPausedPacketNum);
 	}
 
-	int idx = GetOutDev(p, ch);
+	int idx = GetOutDev(p, ch);	// 根据目的ip等，返回下一跳出口的端口号
 	if (idx >= 0){
 		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
 
-		// determine the qIndex
+		// determine the qIndex 算出队列号
 		uint32_t qIndex;
 		if (ch.l3Prot == 0xFF || ch.l3Prot == 0xFE || (m_ackHighPrio && (ch.l3Prot == 0xFD || ch.l3Prot == 0xFC))){  //QCN or PFC or NACK, go highest priority
-			qIndex = 0;
+			qIndex = 0; // 0 为最高优先级
 		}else{
 			qIndex = (ch.l3Prot == 0x06 ? 1 : ch.udp.pg); // if TCP, put to queue 1
 		}
 
-		// admission control
+		// admission control 准入控制
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();
-		if (qIndex != 0){ //not highest priority
-			if (m_mmu->CheckIngressAdmission(inDev, qIndex, p->GetSize()) && m_mmu->CheckEgressAdmission(idx, qIndex, p->GetSize())){			// Admission control
-				m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());
-				m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());
+		if (qIndex != 0){ //not highest priority 不是最高优先级
+			if (m_mmu->CheckIngressAdmission(inDev, qIndex, p->GetSize()) && m_mmu->CheckEgressAdmission(idx, qIndex, p->GetSize())){	// Admission control
+				m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());	// 更新入口准入
+				m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());	// 更新出口准入
 			}else{
 				return; // Drop
 			}
-			CheckAndSendPfc(inDev, qIndex);
+			CheckAndSendPfc(inDev, qIndex);	//暂停此入口队列，并反压上游
 		}
 
-		// RDMA NPA: traffic meter
+		// RDMA NPA: traffic meter 流量统计
 		if (!(ch.l3Prot == 0xFF || ch.l3Prot == 0xFE || ch.l3Prot == 0xFB || ch.l3Prot == 0xFA || (m_ackHighPrio && (ch.l3Prot == 0xFD || ch.l3Prot == 0xFC)))){
-			if((Simulator::Now().GetTimeStep() / (epoch / portToPortSlot)) % portToPortSlot != m_slotIdx){
+			if((Simulator::Now().GetTimeStep() / (epoch / portToPortSlot)) % portToPortSlot != m_slotIdx){ // 判断当前时隙索引是否与分配的时隙索引匹配
 				m_slotIdx = (Simulator::Now().GetTimeStep() / (epoch / portToPortSlot)) % portToPortSlot;
-				for(uint32_t inDev = 0; inDev < pCnt; inDev++){
+				for(uint32_t inDev = 0; inDev < pCnt; inDev++){ // 在时隙m_slotIdx结束时，更新端口到端口的字节计数
 					for(uint32_t outDev = 0; outDev < pCnt; outDev++){
-						m_portToPortBytes[inDev][outDev] -= m_portToPortBytesSlot[inDev][outDev][m_slotIdx];
-						m_portToPortBytesSlot[inDev][outDev][m_slotIdx] = 0;
+						m_portToPortBytes[inDev][outDev] -= m_portToPortBytesSlot[inDev][outDev][m_slotIdx]; // 从总字节数中减去当前时隙的字节数。
+						m_portToPortBytesSlot[inDev][outDev][m_slotIdx] = 0; // 将当前时隙的字节数清零
 					}
 				}
 			}
-			m_portToPortBytesSlot[inDev][idx][m_slotIdx] += p->GetSize();
-			m_portToPortBytes[inDev][idx] += p->GetSize(); 
+			m_portToPortBytesSlot[inDev][idx][m_slotIdx] += p->GetSize(); // 从入口到下一跳出口的当前时隙字节数 + packege size
+			m_portToPortBytes[inDev][idx] += p->GetSize(); // 从入口到下一跳出口的总字节数 + packege size
 
 			FiveTuple fiveTuple{
 				.srcIp = ch.sip,
