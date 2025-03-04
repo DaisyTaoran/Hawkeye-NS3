@@ -49,63 +49,63 @@ namespace ns3 {
 	bool SwitchMmu::CheckEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
 		return true;
 	}
-	void SwitchMmu::UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新入口准入，被switch-node.cc的SendToDev函数调用
-		uint32_t new_bytes = ingress_bytes[port][qIndex] + psize;	// psize=数据包的大小
-		if (new_bytes <= reserve){	// 若入口总大小<=reserve，则正常接收数据包
-			ingress_bytes[port][qIndex] += psize;
-		}else {				// 若入口总大小>reserve，则
+	void SwitchMmu::UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新入口准入字节计数，被switch-node.cc的SendToDev函数调用
+		uint32_t new_bytes = ingress_bytes[port][qIndex] + psize;	// 此入口队列ingress_bytes放入packege后的新大小。psize=数据包的大小
+		if (new_bytes <= reserve){	// 若此入口队列ingress_bytes新大小<=reserve，则：
+			ingress_bytes[port][qIndex] += psize;	// 入口队列正常接收数据包
+		}else {				// 若此入口队列ingress_bytes新大小>reserve，则：
 			uint32_t thresh = GetPfcThreshold(port);	
-			if (new_bytes - reserve > thresh){	// 若入口超出的量 > 端口port的pfc阈值
-				hdrm_bytes[port][qIndex] += psize;	// PFC帧头部字节数 + psize
-			}else {					// 若入口超出的量 <= 端口port的pfc阈值
-				ingress_bytes[port][qIndex] += psize;	// 正常接收数据包
-				shared_used_bytes += std::min(psize, new_bytes - reserve); // 更新共享缓冲区已使用字节数	
+			if (new_bytes - reserve > thresh){	// 若此入口队列超出reserve部分的大小 > 端口port的pfc阈值
+				hdrm_bytes[port][qIndex] += psize;	// 数据包放到hdrm_bytes中。
+			}else {					// 若此入口队列超出reserve部分的大小 <= 端口port的pfc阈值
+				ingress_bytes[port][qIndex] += psize;	// 入口队列正常接收数据包
+				shared_used_bytes += std::min(psize, new_bytes - reserve); // 更新共享缓冲区已使用字节数,并确保不会超出数据包的大小。ingress中超出reserve的部分。
 			}
 		}
 
 		ingress_queue_length[port][qIndex]++;	// 入口队列长度 + 1
 	}// PFC是在交换机入口发起的拥塞管理机制。无拥塞时，入口 buffer不需存储。当出口buffer达到一定阈值，入口 buffer开始积累。当入口 buffer达到阈值，入口开始主动迫使它的上级端口降速。
-	void SwitchMmu::UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新出口准入，被switch-node.cc的SendToDev函数调用
+	void SwitchMmu::UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){	// 更新出口准入字节计数，被switch-node.cc的SendToDev函数调用
 		egress_bytes[port][qIndex] += psize;
 
 		egress_queue_length[port][qIndex]++;
 	}
-	void SwitchMmu::RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
-		uint32_t from_hdrm = std::min(hdrm_bytes[port][qIndex], psize);
-		uint32_t from_shared = std::min(psize - from_hdrm, ingress_bytes[port][qIndex] > reserve ? ingress_bytes[port][qIndex] - reserve : 0);
-		hdrm_bytes[port][qIndex] -= from_hdrm;
-		ingress_bytes[port][qIndex] -= psize - from_hdrm;
-		shared_used_bytes -= from_shared;
+	void SwitchMmu::RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){ // 从入口端口的某队列中处理掉一个数据包，并更新相关的字节计数和队列状态。
+		uint32_t from_hdrm = std::min(hdrm_bytes[port][qIndex], psize);	// 从hdrm_bytes中取出的字节数，并确保不会超出可用范围
+		uint32_t from_shared = std::min(psize - from_hdrm, ingress_bytes[port][qIndex] > reserve ? ingress_bytes[port][qIndex] - reserve : 0); // 从共享区中取出的字节数
+		hdrm_bytes[port][qIndex] -= from_hdrm;				// 更新hdrm字节数：减去已取出的字节数。
+		ingress_bytes[port][qIndex] -= psize - from_hdrm;		// 更新入口字节数：减去数据包剩余需要取出的字节数。
+		shared_used_bytes -= from_shared;				// 更新共享字节数：减去从共享区中取出的字节数。
 
-		ingress_queue_length[port][qIndex]--;
-	}
-	void SwitchMmu::RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){
-		egress_bytes[port][qIndex] -= psize;
+		ingress_queue_length[port][qIndex]--;				// 减少队列长度，表示一个数据包已被处理。
+	} // 共享缓冲区是：多个数据包可以共享同一块内存。当被复制或分片时，NS3不会立即分配新的内存，而是引用共享缓冲区中的数据，直到需要修改内容时才进行内存复制。
+	void SwitchMmu::RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize){ // 从出口端口的某队列中处理掉一个数据包，并更新相关的字节计数和队列状态。
+		egress_bytes[port][qIndex] -= psize; // 更新出口字节数，减去数据包字节数
 
-		egress_queue_length[port][qIndex]--;
+		egress_queue_length[port][qIndex]--; // 减少队列长度，表示一个数据包已被处理。
 	}
-	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){	// 若端口队列此时无暂停包，且(pfc帧头部>0)或(缓冲>pfc阈值)，就发pause包
+	bool SwitchMmu::CheckShouldPause(uint32_t port, uint32_t qIndex){ // 此队列不是暂停状态，且(超出pfc阈值的数据包>0)或(共享缓冲区>pfc阈值)，就发pause包
 		return !paused[port][qIndex] && (hdrm_bytes[port][qIndex] > 0 || GetSharedUsed(port, qIndex) >= GetPfcThreshold(port));	
 	}
 	bool SwitchMmu::CheckShouldResume(uint32_t port, uint32_t qIndex){
-		if (!paused[port][qIndex])
+		if (!paused[port][qIndex]) // 若此队列不是暂停状态，那么不用resume
 			return false;
-		uint32_t shared_used = GetSharedUsed(port, qIndex);
+		uint32_t shared_used = GetSharedUsed(port, qIndex); // 若没有超出pfc阈值的包，且(未超过resume)或(超过resume的部分<=pfc阈值)，那么发送resume包
 		return hdrm_bytes[port][qIndex] == 0 && (shared_used == 0 || shared_used + resume_offset <= GetPfcThreshold(port));
 	}
 	void SwitchMmu::SetPause(uint32_t port, uint32_t qIndex){	// 把端口port的队列qIndex设置为pause状态
 		paused[port][qIndex] = true;
 	}
-	void SwitchMmu::SetResume(uint32_t port, uint32_t qIndex){
+	void SwitchMmu::SetResume(uint32_t port, uint32_t qIndex){	// 把端口port的队列qIndex设置为resume状态(取消pause状态)
 		paused[port][qIndex] = false;
 	}
 
-	uint32_t SwitchMmu::GetPfcThreshold(uint32_t port){
+	uint32_t SwitchMmu::GetPfcThreshold(uint32_t port){ // reserve左移2位，相当于乘以4
 		// return (buffer_size - total_hdrm - total_rsrv - shared_used_bytes) >> pfc_a_shift[port];
 		// TODO:?
 		return reserve << 2;
 	}
-	uint32_t SwitchMmu::GetSharedUsed(uint32_t port, uint32_t qIndex){
+	uint32_t SwitchMmu::GetSharedUsed(uint32_t port, uint32_t qIndex){ // 返回入口队列中超出reserve部分的大小
 		uint32_t used = ingress_bytes[port][qIndex];
 		return used > reserve ? used - reserve : 0;
 	}

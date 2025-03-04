@@ -86,10 +86,10 @@ protected:
 
 private:
 	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);				// 根据目的ip等，返回下一跳出口的端口号
-	void SendToDev(Ptr<Packet>p, CustomHeader &ch);
-	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值
-	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);
-	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);
+	void SendToDev(Ptr<Packet>p, CustomHeader &ch);					// 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值。
+	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				// 尝试设置暂停状态，并发送pfc Pause包。
+	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			// 尝试取消暂停状态，并发送pfc Resume包。
 	// RDMA NPA
 	static uint32_t FiveTupleHash(const FiveTuple &fiveTuple);
 	static uint32_t GetEpochIdx();
@@ -102,8 +102,8 @@ public:
 	void SetEcmpSeed(uint32_t seed);
 	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);
 	void ClearTable();
-	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch);
-	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);
+	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch); // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);		   // 通知交换机，数据包p已经从队列中出队
 
 	// for approximate calc in PINT
 	int logres_shift(int b, int l);

@@ -19,15 +19,15 @@ public:
 
 	bool CheckIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
 	bool CheckEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
-	void UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新入口准入
-	void UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新出口准入
-	void RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
-	void RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);
+	void UpdateIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新入口准入字节计数。根据当前队列的字节数和阈值，决定如何分配新到达数据包的字节数，并更新相关的队列状态
+	void UpdateEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);	// 更新出口准入字节计数。
+	void RemoveFromIngressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize);// 从某入口队列中处理掉一个数据包，并更新相关的字节计数和队列状态。
+	void RemoveFromEgressAdmission(uint32_t port, uint32_t qIndex, uint32_t psize); // 从某出口队列中处理掉一个数据包，并更新相关的字节计数和队列状态。
 
-	bool CheckShouldPause(uint32_t port, uint32_t qIndex);	// 检查端口port的队列qIndex处，根据pfc阈值，决定是否要发暂停包
+	bool CheckShouldPause(uint32_t port, uint32_t qIndex);	// 检查端口port的队列qIndex处，根据pfc阈值， 决定是否要发暂停包
 	bool CheckShouldResume(uint32_t port, uint32_t qIndex);
 	void SetPause(uint32_t port, uint32_t qIndex);		// 把端口port的队列qIndex设置为pause状态
-	void SetResume(uint32_t port, uint32_t qIndex);
+	void SetResume(uint32_t port, uint32_t qIndex);  	// 把端口port的队列qIndex设置为resume状态(取消pause状态)
 	//void GetPauseClasses(uint32_t port, uint32_t qIndex);
 	//bool GetResumeClasses(uint32_t port, uint32_t qIndex);
 
@@ -54,7 +54,7 @@ public:
 	uint32_t total_rsrv;
 
 	// runtime
-	uint32_t shared_used_bytes;		// 可能是共享缓冲区中已使用的字节数
+	uint32_t shared_used_bytes;		// 可能是共享缓冲区中已使用的字节数。用于跟踪共享缓冲区的使用情况，确保缓冲区不会超出其容量。
 	uint32_t hdrm_bytes[pCnt][qCnt];	// 可能是数据包中协议头部的字节数，包含控制信息（如源地址、目的地址、序列号等）
 	uint32_t ingress_bytes[pCnt][qCnt];
 	uint32_t paused[pCnt][qCnt];

@@ -111,22 +111,22 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下�
 	return nexthops[idx];
 }
 
-void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){	// 据UpdateIngressAdmission：若超出pfc阈值，pfc帧头部字节数增加psize
+void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向上发pause并把此队列设为pause。
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
-	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 检查，若要发Pause包
-		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包
-		m_mmu->SetPause(inDev, qIndex);			// 把端口inDev的队列qIndex设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
+	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要发pfc Pause包:
+		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向上溯源，发送PFC Pause 包
+		m_mmu->SetPause(inDev, qIndex);			// 把此队列设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
 	}
 }
 void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);
 	if (m_mmu->CheckShouldResume(inDev, qIndex)){
 		device->SendPfc(qIndex, 1);
-		m_mmu->SetResume(inDev, qIndex);
+		m_mmu->SetResume(inDev, qIndex);	// 把此队列取消pause状态。
 	}
 }
 
-void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
+void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 
 	//RDMA NPA : signal packet parse 信号数据包解析
 	if (ch.l3Prot == 0xFB){
@@ -281,12 +281,12 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		uint32_t inDev = t.GetFlowId();
 		if (qIndex != 0){ //not highest priority 不是最高优先级
 			if (m_mmu->CheckIngressAdmission(inDev, qIndex, p->GetSize()) && m_mmu->CheckEgressAdmission(idx, qIndex, p->GetSize())){	// Admission control
-				m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());	// 更新入口准入
-				m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());	// 更新出口准入
+				m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());	// 更新入口准入字节状态
+				m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());	// 更新出口准入字节状态
 			}else{
 				return; // Drop
 			}
-			CheckAndSendPfc(inDev, qIndex);	//暂停此入口队列，并反压上游
+			CheckAndSendPfc(inDev, qIndex);	//检查是否需pause。是则反压上游，并把此队列设为pause。
 		}
 
 		// RDMA NPA: traffic meter 流量统计
@@ -310,11 +310,11 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 				.dstPort = ch.l3Prot == 0x06 ? ch.tcp.dport : ch.udp.dport,
 				.protocol = (uint8_t)ch.l3Prot
 			};
-			uint32_t epochIdx = GetEpochIdx();
-			uint32_t flowIdx = FiveTupleHash(fiveTuple);
-			auto &entry = m_flowTelemetryData[idx][epochIdx][flowIdx];
-			bool newEntry = Simulator::Now().GetTimeStep() - entry.lastTimeStep > epoch * (epochNum - 1);
-			if (entry.flowTuple == fiveTuple && !newEntry){
+			uint32_t epochIdx = GetEpochIdx();				// 获取当前时间所属 epoch 周期的索引。
+			uint32_t flowIdx = FiveTupleHash(fiveTuple);			// 对五元组进行 hash，获取流索引
+			auto &entry = m_flowTelemetryData[idx][epochIdx][flowIdx];	// 访问流量统计数据中特定端口、特定 epoch和特定流索引的条目。
+			bool newEntry = Simulator::Now().GetTimeStep() - entry.lastTimeStep > epoch * (epochNum - 1); // (当前时间步长 - 上一次更新时间步长)更大，则需创建新条目
+			if (entry.flowTuple == fiveTuple && !newEntry){ // 若 条目流元组=五元组 且 在最近的时间窗口内活跃,无需新建条目
 				uint32_t seq = ch.l3Prot == 0x06 ? ch.tcp.seq : ch.udp.seq;
 				if(seq < entry.minSeq){
 					entry.minSeq = seq;
@@ -328,7 +328,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 					entry.pfcPausedPacketNum++;
 				}
 				entry.lastTimeStep = Simulator::Now().GetTimeStep();
-			} else{
+			} else{ // 不在最近的时间窗口内活跃,需要新建条目
 				entry.flowTuple = fiveTuple;
 				entry.minSeq = entry.maxSeq = ch.l3Prot == 0x06 ? ch.tcp.seq : ch.udp.seq;
 				entry.packetNum = 1;
@@ -341,14 +341,14 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 			}
 
 			auto &portEntry = m_portTelemetryData[epochIdx][idx];
-			bool newPortEntry = Simulator::Now().GetTimeStep() - portEntry.lastTimeStep > epoch * (epochNum - 1);
-			if (!newPortEntry){
+			bool newPortEntry = Simulator::Now().GetTimeStep() - portEntry.lastTimeStep > epoch * (epochNum - 1); // (当前时间步长 - 上一次更新时间步长)更大，则需创建新条目
+			if (!newPortEntry){ // 无需新建条目
 				portEntry.enqQdepth += m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
 					portEntry.pfcPausedPacketNum++;
 				}
 				portEntry.lastTimeStep = Simulator::Now().GetTimeStep();
-			} else{
+			} else{ // 需要新建条目
 				portEntry.enqQdepth = m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				portEntry.pfcPausedPacketNum = 0;
 				portEntry.lastTimeStep = Simulator::Now().GetTimeStep();
@@ -421,18 +421,18 @@ void SwitchNode::ClearTable(){
 }
 
 // This function can only be called in switch mode
-bool SwitchNode::SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch){
-	SendToDev(packet, ch);
+bool SwitchNode::SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch){ // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+	SendToDev(packet, ch); // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据 
 	return true;
 }
 
-void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){
+void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){ // 通知交换机，数据包p已经从队列中出队
 	FlowIdTag t;
 	p->PeekPacketTag(t);
-	if (qIndex != 0){
+	if (qIndex != 0){ // 非最高优先级
 		uint32_t inDev = t.GetFlowId();
-		m_mmu->RemoveFromIngressAdmission(inDev, qIndex, p->GetSize());
-		m_mmu->RemoveFromEgressAdmission(ifIndex, qIndex, p->GetSize());
+		m_mmu->RemoveFromIngressAdmission(inDev, qIndex, p->GetSize());		// 从某入口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
+		m_mmu->RemoveFromEgressAdmission(ifIndex, qIndex, p->GetSize());	// 从某出口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
 		m_bytes[inDev][ifIndex][qIndex] -= p->GetSize();
 		if (m_ecnEnabled){
 			bool egressCongested = m_mmu->ShouldSendCN(ifIndex, qIndex);
@@ -447,7 +447,7 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 			}
 		}
 		//CheckAndSendPfc(inDev, qIndex);
-		CheckAndSendResume(inDev, qIndex);
+		CheckAndSendResume(inDev, qIndex);					// 尝试取消暂停状态，并发送pfc Resume包。
 	}
 	if (1){
 		uint8_t* buf = p->GetBuffer();
