@@ -386,7 +386,7 @@ int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){
 	return 0;
 }
 
-int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
+int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下降后，设置轮询包。即实现agent功能
 	uint16_t qIndex = ch.ack.pg;
 	uint16_t port = ch.ack.dport;
 	uint32_t seq = ch.ack.seq;
@@ -428,23 +428,23 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 		uint64_t rtt = Simulator::Now().GetTimeStep() - ch.ack.ih.ts;
 		uint64_t interval = Simulator::Now().GetTimeStep() - qp->npa.m_lastPollingTime;
 		if(interval > 1000000){
-			if(rtt > qp->npa.m_maxRtt && rtt > 10000){
-				qp->npa.m_maxRtt = rtt;
-				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep();
+			if(rtt > qp->npa.m_maxRtt && rtt > 10000){ // 检测到流性能下降
+				qp->npa.m_maxRtt = rtt; // 记录当前rtt
+				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep(); // 设置轮询时间，以准备发送轮询包
 			} 
 		}
 		if (qp->npa.m_maxRtt > 10000 && (Simulator::Now().GetTimeStep() % 1000000 > 900000)){
 			qp->npa.m_maxRtt = 0;
 
 			Ptr<Packet> p = Create<Packet>(0);
-			CustomHeader pollingHdr(CustomHeader::L4_Header);
-			pollingHdr.l3Prot = 0xFA;
+			CustomHeader pollingHdr(CustomHeader::L4_Header);	// 初始化轮询包头部
+			pollingHdr.l3Prot = 0xFA;				// L3协议设置为轮询数据包
 			pollingHdr.polling.seq = ch.ack.seq;
 			p->AddHeader(pollingHdr);
 			Ipv4Header head;
-			head.SetDestination(Ipv4Address(ch.sip));
-			head.SetSource(Ipv4Address(ch.dip));
-			head.SetProtocol(0xFA);
+			head.SetDestination(Ipv4Address(ch.sip));		// 轮询包的目的IP==ch的源ip
+			head.SetSource(Ipv4Address(ch.dip));			// 轮询包的源IP==ch的目的ip
+			head.SetProtocol(0xFA);					// L3协议设置为轮询数据包
 			head.SetTtl(64);
 			head.SetPayloadSize(p->GetSize());
 			head.SetIdentification(qp->m_ipid++);

@@ -100,7 +100,7 @@ public:
 	static TypeId GetTypeId (void);
 	SwitchNode();
 	void SetEcmpSeed(uint32_t seed);
-	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);
+	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);	// 在IP路由表的dstAddr.ip项中，加入一个值intf_idx
 	void ClearTable();
 	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch); // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);		   // 通知交换机，数据包p已经从队列中出队

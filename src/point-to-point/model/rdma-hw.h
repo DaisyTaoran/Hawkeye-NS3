@@ -60,7 +60,7 @@ public:
 
 	int ReceiveUdp(Ptr<Packet> p, CustomHeader &ch);
 	int ReceiveCnp(Ptr<Packet> p, CustomHeader &ch);
-	int ReceiveAck(Ptr<Packet> p, CustomHeader &ch); // handle both ACK and NACK
+	int ReceiveAck(Ptr<Packet> p, CustomHeader &ch); // handle both ACK and NACK 检测到性能下降后，设置轮询包。即实现agent功能
 	int Receive(Ptr<Packet> p, CustomHeader &ch); // callback function that the QbbNetDevice should use when receive packets. Only NIC can call this function. And do not call this upon PFC
 
 	void CheckandSendQCN(Ptr<RdmaRxQueuePair> q);

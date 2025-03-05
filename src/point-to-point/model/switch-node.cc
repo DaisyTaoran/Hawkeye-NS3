@@ -411,9 +411,9 @@ void SwitchNode::SetEcmpSeed(uint32_t seed){
 	m_ecmpSeed = seed;
 }
 
-void SwitchNode::AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx){
+void SwitchNode::AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx){ // 在IP路由表的dstAddr.ip项中，加入一个值intf_idx
 	uint32_t dip = dstAddr.Get();
-	m_rtTable[dip].push_back(intf_idx);
+	m_rtTable[dip].push_back(intf_idx); // 在IP路由表中dip对应的向量m_rtTable[dip]中加入intf_idx
 }
 
 void SwitchNode::ClearTable(){
@@ -482,7 +482,7 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 					int log_qlen = log2apprx(qlen >> 8, b, m, l); // ~log2(qlen / 256)*fct
 					qterm = pow(2, (
 								log_dt + log_qlen + log_1e9 - log_B - 2*log_T
-								)/fct
+								) / fct
 							) * 256;
 					// 2^((log2(dt)*fct+log2(qlen/256)*fct+log2(1e9)*fct-log2(B)*fct-2*log2(T)*fct)/fct)*256 ~= dt*qlen*1e9/(B*T^2)
 				}
