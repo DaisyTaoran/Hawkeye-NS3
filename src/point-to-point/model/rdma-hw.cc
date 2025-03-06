@@ -191,7 +191,7 @@ void RdmaHw::Setup(QpCompleteCallback cb){
 			continue;
 		// share data with NIC
 		dev->m_rdmaEQ->m_qpGrp = m_nic[i].qpGrp;
-		// setup callback
+		// setup callback 绑定了QbbNetDevice的Receive函数们
 		dev->m_rdmaReceiveCb = MakeCallback(&RdmaHw::Receive, this);
 		dev->m_rdmaLinkDownCb = MakeCallback(&RdmaHw::SetLinkDown, this);
 		dev->m_rdmaPktSent = MakeCallback(&RdmaHw::PktSent, this);

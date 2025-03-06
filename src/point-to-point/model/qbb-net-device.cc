@@ -167,7 +167,7 @@ namespace ns3 {
 	 *****************/
 	NS_OBJECT_ENSURE_REGISTERED(QbbNetDevice);
 
-	TypeId
+	TypeId // TypeId 是一个用于唯一标识和描述类的机制。TypeId对象,一般包含类的元数据，如类名、父类、属性、追踪源等。
 		QbbNetDevice::GetTypeId(void)
 	{
 		static TypeId tid = TypeId("ns3::QbbNetDevice")
@@ -211,8 +211,8 @@ namespace ns3 {
 					MakeTraceSourceAccessor (&QbbNetDevice::m_traceDrop))
 			.AddTraceSource ("RdmaQpDequeue", "A qp dequeue a packet.",
 					MakeTraceSourceAccessor (&QbbNetDevice::m_traceQpDequeue))
-			.AddTraceSource ("QbbPfc", "get a PFC packet. 0: resume, 1: pause",
-					MakeTraceSourceAccessor (&QbbNetDevice::m_tracePfc))
+			.AddTraceSource ("QbbPfc", "get a PFC packet. 0: resume, 1: pause",     // 添加一个名为 QbbPfc 的跟踪源
+					MakeTraceSourceAccessor (&QbbNetDevice::m_tracePfc))    // 创建一个跟踪源访问器，用于访问 TracedCallback对象 m_tracePfc。
 			;
 
 		return tid;
@@ -373,10 +373,10 @@ namespace ns3 {
 			if (!m_qbbEnabled) return;
 			unsigned qIndex = ch.pfc.qIndex;
 			if (ch.pfc.time > 0){
-				m_tracePfc(1);
+				m_tracePfc(1); // 1：pause
 				m_paused[qIndex] = true;
 			}else{
-				m_tracePfc(0);
+				m_tracePfc(0); // 0：resume
 				Resume(qIndex);
 			}
 		}else { // non-PFC packets (data, ACK, NACK, CNP...)
@@ -385,7 +385,7 @@ namespace ns3 {
 				m_node->SwitchReceiveFromDevice(this, packet, ch);
 			}else { // NIC
 				// send to RdmaHw
-				int ret = m_rdmaReceiveCb(packet, ch);
+				int ret = m_rdmaReceiveCb(packet, ch); // 在RdmaHw::Setup中进行了MakeCallback，绑定了RdmaHw::Receive函数
 				// TODO we may based on the ret do something
 			}
 		}
