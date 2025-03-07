@@ -136,7 +136,7 @@ void ReadFlowInput(){   // 从文件中读取一行流信息
 		NS_ASSERT(n.Get(flow_input.src)->GetNodeType() == 0 && n.Get(flow_input.dst)->GetNodeType() == 0);
 	}
 }
-void ScheduleFlowInputs(){
+void ScheduleFlowInputs(){ // 按计划读取流信息
 	while (flow_input.idx < flow_num && Seconds(flow_input.start_time) == Simulator::Now()){
 		uint32_t port = portNumder[flow_input.src][flow_input.dst]++; // get a new port number 
 		RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
@@ -156,113 +156,115 @@ void ScheduleFlowInputs(){
 	}
 }
 
-Ipv4Address node_id_to_ip(uint32_t id){
+Ipv4Address node_id_to_ip(uint32_t id){ // 把 node id 转换为对应的 ip 地址
 	return Ipv4Address(0x0b000001 + ((id / 256) * 0x00010000) + ((id % 256) * 0x00000100));
 }
 
-uint32_t ip_to_node_id(Ipv4Address ip){
+uint32_t ip_to_node_id(Ipv4Address ip){ // 把 ip 地址转换为对应的 node id
 	return (ip.Get() >> 8) & 0xffff;
 }
 
-void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){
-	uint32_t sid = ip_to_node_id(q->sip), did = ip_to_node_id(q->dip);
-	uint64_t base_rtt = pairRtt[sid][did], b = pairBw[sid][did];
+void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){ // 处理 RDMA 队列对（Queue Pair, QP）的结束操作。
+	uint32_t sid = ip_to_node_id(q->sip), did = ip_to_node_id(q->dip);      // 算出源 node id 和目的 node id
+	uint64_t base_rtt = pairRtt[sid][did], b = pairBw[sid][did];            // 算出源节点和目的节点之间的基础 rtt 和带宽
+	// q->m_size 是队列对中传输的数据大小；packet_payload_size 是每个数据包的有效载荷大小；包括数据包自定义头部和内部头部的大小。
 	uint32_t total_bytes = q->m_size + ((q->m_size-1) / packet_payload_size + 1) * (CustomHeader::GetStaticWholeHeaderSize() - IntHeader::GetStaticSize()); // translate to the minimum bytes required (with header but no INT)
-	uint64_t standalone_fct = base_rtt + total_bytes * 8000000000lu / b;
-	// sip, dip, sport, dport, size (B), start_time, fct (ns), standalone_fct (ns)
+	uint64_t standalone_fct = base_rtt + total_bytes * 8000000000lu / b;    // 独立流完成时间，表示在没有其他流干扰的情况下，完成数据传输所需的时间。常数用于将字节转换为纳秒
+	// sip, dip, sport, dport, size (B), start_time, fct (ns), standalone_fct (ns) 将队列对的相关信息写入输出文件
 	fprintf(fout, "%08x %08x %u %u %lu %lu %lu %lu\n", q->sip.Get(), q->dip.Get(), q->sport, q->dport, q->m_size, q->startTime.GetTimeStep(), (Simulator::Now() - q->startTime).GetTimeStep(), standalone_fct);
-	fflush(fout);
+	fflush(fout);                                                           // 立即写入输出文件，而不是缓存在内存中
 
-	// remove rxQp from the receiver
+	// remove rxQp from the receiver 删除目标节点的接收队列
 	Ptr<Node> dstNode = n.Get(did);
 	Ptr<RdmaDriver> rdma = dstNode->GetObject<RdmaDriver> ();
 	rdma->m_rdma->DeleteRxQp(q->sip.Get(), q->m_pg, q->sport);
 }
 
-void get_pfc(FILE* fout, Ptr<QbbNetDevice> dev, uint32_t type){
+void get_pfc(FILE* fout, Ptr<QbbNetDevice> dev, uint32_t type){ // 把pfc包的相关信息写入输出文件
 	fprintf(fout, "%lu %u %u %u %u\n", Simulator::Now().GetTimeStep(), dev->GetNode()->GetId(), dev->GetNode()->GetNodeType(), dev->GetIfIndex(), type);
 }
 
-struct QlenDistribution{
-	vector<uint32_t> cnt; // cnt[i] is the number of times that the queue len is i KB
+struct QlenDistribution{ // 用于统计队列长度的分布情况。它的作用是记录队列长度在不同范围内的出现次数，并以千字节（KB）为单位进行统计。
+	vector<uint32_t> cnt; // cnt[i] is the number of times that the queue len is i KB 队列长度为 i KB 的次数
 
-	void add(uint32_t qlen){
-		uint32_t kb = qlen / 1000;
-		if (cnt.size() < kb+1)
+	void add(uint32_t qlen){ // 用于更新队列长度的统计信息。qlen 是当前的队列长度，单位是字节（Byte）
+		uint32_t kb = qlen / 1000; // 队列长度从byte转换为KB
+		if (cnt.size() < kb+1)     // 如果动态数组大小不够，就增加索引，直到cnt[kb]存在
 			cnt.resize(kb+1);
 		cnt[kb]++;
 	}
 };
-map<uint32_t, map<uint32_t, QlenDistribution> > queue_result;
-void monitor_buffer(FILE* qlen_output, NodeContainer *n){
-	for (uint32_t i = 0; i < n->GetN(); i++){
+map<uint32_t, map<uint32_t, QlenDistribution> > queue_result; // 存储每个交换机和每个端口的队列长度分布。外层 map 的键是交换机 ID；内层 map的键是端口 ID
+void monitor_buffer(FILE* qlen_output, NodeContainer *n){ // 监控交换机的缓冲区（队列）状态，并将队列长度的分布情况记录到文件中。它定期收集交换机端口的队列长度数据，并写入文件
+	for (uint32_t i = 0; i < n->GetN(); i++){                       // 更新所有交换机的队列长度分布，保存在 queue_result 中
 		if (n->Get(i)->GetNodeType() == 1){ // is switch
-			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n->Get(i));
-			if (queue_result.find(i) == queue_result.end())
+			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n->Get(i)); // 将节点动态转换为 SwitchNode 类型，以便访问交换机的特定属性和方法。
+			if (queue_result.find(i) == queue_result.end())          // 如果 queue_result 中还没有当前交换机的条目，则初始化一个。
 				queue_result[i];
-			for (uint32_t j = 1; j < sw->GetNDevices(); j++){
-				uint32_t size = 0;
+			for (uint32_t j = 1; j < sw->GetNDevices(); j++){        // 遍历交换机的所有端口（从 1 开始，因为 0 通常是控制端口）。
+				uint32_t size = 0;                                      // 计算端口 j 的总队列长度（端口所有队列的长度相加）
 				for (uint32_t k = 0; k < SwitchMmu::qCnt; k++)
-					size += sw->m_mmu->egress_bytes[j][k];
-				queue_result[i][j].add(size);
+					size += sw->m_mmu->egress_bytes[j][k];                  // 端口 j 的第 k 个队列的字节数。
+				queue_result[i][j].add(size);                           // 更新端口 j 的队列长度分布
 			}
 		}
 	}
-	if (Simulator::Now().GetTimeStep() % qlen_dump_interval == 0){
+	if (Simulator::Now().GetTimeStep() % qlen_dump_interval == 0){  // 检查是否到达写入时间点。当前仿真时间步长是 qlen_dump_interval 的倍数，则写入。
 		fprintf(qlen_output, "time: %lu\n", Simulator::Now().GetTimeStep());
-		for (auto &it0 : queue_result)
+		for (auto &it0 : queue_result)                                  // 遍历 queue_result ，并写入文件 qlen.txt
 			for (auto &it1 : it0.second){
 				fprintf(qlen_output, "%u %u", it0.first, it1.first);
 				auto &dist = it1.second.cnt;
-				for (uint32_t i = 0; i < dist.size(); i++)
+				for (uint32_t i = 0; i < dist.size(); i++)              // 遍历队列长度分布 dist，并将每个分布值写入文件
 					fprintf(qlen_output, " %u", dist[i]);
 				fprintf(qlen_output, "\n");
 			}
-		fflush(qlen_output);
+		fflush(qlen_output);                                            // 确保数据立即写入文件，而不是缓存在内存中。
 	}
-	if (Simulator::Now().GetTimeStep() < qlen_mon_end)
-		Simulator::Schedule(NanoSeconds(qlen_mon_interval), &monitor_buffer, qlen_output, n);
+	if (Simulator::Now().GetTimeStep() < qlen_mon_end)              // 检查是否继续监控。当前仿真时间是否小于监控结束时间 
+		Simulator::Schedule(NanoSeconds(qlen_mon_interval), &monitor_buffer, qlen_output, n); //  计划在 qlen_mon_interval 时间后再次调用此函数，实现定期监控。
 }
 
-void CalculateRoute(Ptr<Node> host){
+void CalculateRoute(Ptr<Node> host){ // 基于广度优先搜索(BFS)的路由算法。从给定的host节点出发，计算到其他节点的最短路径，并记录路径的延迟、传输延迟和带宽等信息。路径记在nextHop中。
 	// queue for the BFS.
-	vector<Ptr<Node> > q;
+	vector<Ptr<Node> > q;                   // 用于 BFS 的队列，存储待访问的节点。
 	// Distance from the host to each node.
-	map<Ptr<Node>, int> dis;
-	map<Ptr<Node>, uint64_t> delay;
-	map<Ptr<Node>, uint64_t> txDelay;
-	map<Ptr<Node>, uint64_t> bw;
-	// init BFS.
+	map<Ptr<Node>, int> dis;                // 记录从 host 到每个节点的跳数（距离）
+	map<Ptr<Node>, uint64_t> delay;         // 记录从 host 到每个节点的总延迟
+	map<Ptr<Node>, uint64_t> txDelay;       // 记录从 host 到每个节点的总传输延迟
+	map<Ptr<Node>, uint64_t> bw;            // 记录从 host 到每个节点的路径上的最小带宽
+	// init BFS. 初始化 host 到自身的距离、延迟、传输延迟和带宽
 	q.push_back(host);
 	dis[host] = 0;
 	delay[host] = 0;
 	txDelay[host] = 0;
-	bw[host] = 0xfffffffffffffffflu;
+	bw[host] = 0xfffffffffffffffflu;        // 带宽设为最大值
 	// BFS.
-	for (int i = 0; i < (int)q.size(); i++){
+	for (int i = 0; i < (int)q.size(); i++){// 开始BFS计算
 		Ptr<Node> now = q[i];
-		int d = dis[now];
-		for (auto it = nbr2if[now].begin(); it != nbr2if[now].end(); it++){
+		int d = dis[now];                       // 从起点 host 到当前节点 i 的跳数，记为 d
+		for (auto it = nbr2if[now].begin(); it != nbr2if[now].end(); it++){ // 遍历当前节点的邻居。映射nbr2if[now] ，存储当前节点的邻居节点及其对应的链路信息。
 			// skip down link
-			if (!it->second.up)
+			if (!it->second.up)                     // 跳过失效链路。如果链路状态为 down，则跳过该邻居节点 
 				continue;
-			Ptr<Node> next = it->first;
+			Ptr<Node> next = it->first;             // 这个邻居，暂时叫他 next
 			// If 'next' have not been visited.
-			if (dis.find(next) == dis.end()){
-				dis[next] = d + 1;
+			if (dis.find(next) == dis.end()){       // 如果邻居节点 next 未被访问过，则更新其信息
+				dis[next] = d + 1;                      // 更新 host 到 next 的跳数
 				delay[next] = delay[now] + it->second.delay;
 				txDelay[next] = txDelay[now] + packet_payload_size * 1000000000lu * 8 / it->second.bw;
 				bw[next] = std::min(bw[now], it->second.bw);
 				// we only enqueue switch, because we do not want packets to go through host as middle point
-				if (next->GetNodeType() == 1)
+				if (next->GetNodeType() == 1)           // 如果邻居节点是交换机，则将其加入 BFS 队列。
 					q.push_back(next);
 			}
 			// if 'now' is on the shortest path from 'next' to 'host'.
-			if (d + 1 == dis[next]){
-				nextHop[next][host].push_back(now);
+			if (d + 1 == dis[next]){                // 如果当前节点 now 在从 next 到 host 的最短路径上：
+				nextHop[next][host].push_back(now);     // 则将 now 记录为 next 到 host 的下一跳节点。
 			}
 		}
 	}
+	// 更新全局路由信息。将计算得到的延迟、传输延迟和带宽信息更新到全局数据结构中：
 	for (auto it : delay)
 		pairDelay[it.first][host] = it.second;
 	for (auto it : txDelay)
@@ -271,33 +273,33 @@ void CalculateRoute(Ptr<Node> host){
 		pairBw[it.first->GetId()][host->GetId()] = it.second;
 }
 
-void CalculateRoutes(NodeContainer &n){
-	for (int i = 0; i < (int)n.GetN(); i++){
+void CalculateRoutes(NodeContainer &n){ // 用路由算法，计算所有节点到其他节点的最短路径。即，求全局的下一跳信息。
+	for (int i = 0; i < (int)n.GetN(); i++){ // 遍历每个节点
 		Ptr<Node> node = n.Get(i);
-		if (node->GetNodeType() == 0)
-			CalculateRoute(node);
+		if (node->GetNodeType() == 0)           // 若当前节点不是交换机：
+			CalculateRoute(node);                   // 则计算从 node 到其他节点的最短路径。路径记在nextHop[nowNode][destNode]中。
 	}
 }
 
-void SetRoutingEntries(){
-	// For each node.
-	for (auto i = nextHop.begin(); i != nextHop.end(); i++){
-		Ptr<Node> node = i->first;
-		auto &table = i->second;
-		for (auto j = table.begin(); j != table.end(); j++){
+void SetRoutingEntries(){ // 设置路由表条目。根据全局的下一跳信息（nextHop），为每个节点配置到目标节点的路由表条目。
+	// For each node. 遍历 nextHop 中的所有节点
+	for (auto i = nextHop.begin(); i != nextHop.end(); i++){ 
+		Ptr<Node> node = i->first;      // 当前节点叫 node。
+		auto &table = i->second;        // table 是 node 的路由表，存储了从 node 到各个目标节点的下一跳信息。
+		for (auto j = table.begin(); j != table.end(); j++){ // 遍历 table 中的所有目标节点。
 			// The destination node.
-			Ptr<Node> dst = j->first;
+			Ptr<Node> dst = j->first;               // 目标节点叫 dst
 			// The IP address of the dst.
-			Ipv4Address dstAddr = dst->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
+			Ipv4Address dstAddr = dst->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal(); // 获取第 1 个网络接口的第 0 个 IP 地址
 			// The next hops towards the dst.
-			vector<Ptr<Node> > nexts = j->second;
+			vector<Ptr<Node> > nexts = j->second;   // 获取从 node 到 dst 的所有下一跳节点 nexts。
 			for (int k = 0; k < (int)nexts.size(); k++){
 				Ptr<Node> next = nexts[k];
-				uint32_t interface = nbr2if[node][next].idx;
-				if (node->GetNodeType() == 1)
-					DynamicCast<SwitchNode>(node)->AddTableEntry(dstAddr, interface);
-				else{
-					node->GetObject<RdmaDriver>()->m_rdma->AddTableEntry(dstAddr, interface);
+				uint32_t interface = nbr2if[node][next].idx; // 获取下一跳的接口索引 interface 。获取 node 到 next 的链路对应的接口索引 interface。
+				if (node->GetNodeType() == 1)                // 如果 node 是交换机：
+					DynamicCast<SwitchNode>(node)->AddTableEntry(dstAddr, interface); // 将目标 IP 地址和下一跳接口索引，添加到交换机的路由表中
+				else{                                        // 如果 node 是主机：
+					node->GetObject<RdmaDriver>()->m_rdma->AddTableEntry(dstAddr, interface); // 将目标 IP 地址和下一跳接口索引，添加到主机的路由表中
 				}
 			}
 		}
@@ -305,29 +307,29 @@ void SetRoutingEntries(){
 }
 
 // take down the link between a and b, and redo the routing
-void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){
-	if (!nbr2if[a][b].up)
+void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){ // 模拟网络中两个节点之间的链路失效（例如链路断开或故障）
+	if (!nbr2if[a][b].up)   // 如果链路已经处于失效状态
 		return;
 	// take down link between a and b
-	nbr2if[a][b].up = nbr2if[b][a].up = false;
-	nextHop.clear();
-	CalculateRoutes(n);
+	nbr2if[a][b].up = nbr2if[b][a].up = false;      // 将 a 到 b 和 b 到 a 的链路状态标记为失效
+	nextHop.clear();        // 清除下一跳信息
+	CalculateRoutes(n);     // 重新计算全局下一跳信息
 	// clear routing tables
-	for (uint32_t i = 0; i < n.GetN(); i++){
+	for (uint32_t i = 0; i < n.GetN(); i++){ // 遍历所有节点，并清除路由表
 		if (n.Get(i)->GetNodeType() == 1)
 			DynamicCast<SwitchNode>(n.Get(i))->ClearTable();
 		else
 			n.Get(i)->GetObject<RdmaDriver>()->m_rdma->ClearTable();
 	}
-	DynamicCast<QbbNetDevice>(a->GetDevice(nbr2if[a][b].idx))->TakeDown();
-	DynamicCast<QbbNetDevice>(b->GetDevice(nbr2if[b][a].idx))->TakeDown();
+	DynamicCast<QbbNetDevice>(a->GetDevice(nbr2if[a][b].idx))->TakeDown(); // 通知设备 a 链路失效
+	DynamicCast<QbbNetDevice>(b->GetDevice(nbr2if[b][a].idx))->TakeDown(); // 通知设备 b 链路失效
 	// reset routing table
-	SetRoutingEntries();
+	SetRoutingEntries();    // 根据新的路由信息，重新设置路由表。
 
 	// redistribute qp on each host
 	for (uint32_t i = 0; i < n.GetN(); i++){
-		if (n.Get(i)->GetNodeType() == 0)
-			n.Get(i)->GetObject<RdmaDriver>()->m_rdma->RedistributeQp();
+		if (n.Get(i)->GetNodeType() == 0)       // 遍历所有主机节点
+			n.Get(i)->GetObject<RdmaDriver>()->m_rdma->RedistributeQp(); // 重新分配队列对（QP），以适应新的网络拓扑------------------------------------
 	}
 }
 
@@ -677,14 +679,14 @@ int main(int argc, char *argv[])
 				}
 				std::cout<<'\n';
 			}
-			fflush(stdout);
+			fflush(stdout); // // 确保数据立即写入stdout，而不是缓存在内存中。
 		}
 		conf.close();
 	}
 	else
 	{
 		std::cout << "Error: require a config file\n";
-		fflush(stdout);
+		fflush(stdout); // // 确保数据立即写入stdout，而不是缓存在内存中。
 		return 1;
 	}
 
@@ -751,10 +753,10 @@ int main(int argc, char *argv[])
 	internet.Install(n);
 
 	//
-	// Assign IP to each server
+	// Assign IP to each server(host)
 	//
 	for (uint32_t i = 0; i < node_num; i++){
-		if (n.Get(i)->GetNodeType() == 0){ // is server
+		if (n.Get(i)->GetNodeType() == 0){ // is host server
 			serverAddress.resize(i + 1);
 			serverAddress[i] = node_id_to_ip(i);
 		}
@@ -775,54 +777,54 @@ int main(int argc, char *argv[])
 
 	FILE *pfc_file = fopen(pfc_output_file.c_str(), "w");
 
-	QbbHelper qbb;
-	Ipv4AddressHelper ipv4;
-	for (uint32_t i = 0; i < link_num; i++)
+	QbbHelper qbb;          // 用于创建和管理 QbbNetDevice 和 QbbChannel 的帮助类。
+	Ipv4AddressHelper ipv4; // 用于分配和管理 IPv4 地址。
+	for (uint32_t i = 0; i < link_num; i++) // 读取topo文件中链路信息，为每对节点创建网络设备（QbbNetDevice）和信道（QbbChannel），并设置相关的链路
 	{
 		uint32_t src, dst;
 		std::string data_rate, link_delay;
 		double error_rate;
 		topof >> src >> dst >> data_rate >> link_delay >> error_rate;
 
-		Ptr<Node> snode = n.Get(src), dnode = n.Get(dst);
+		Ptr<Node> snode = n.Get(src), dnode = n.Get(dst);               // 根据节点索引 src 和 dst，从节点容器 n 中获取源节点 snode 和目标节点 dnode。
 
-		qbb.SetDeviceAttribute("DataRate", StringValue(data_rate));
-		qbb.SetChannelAttribute("Delay", StringValue(link_delay));
+		qbb.SetDeviceAttribute("DataRate", StringValue(data_rate));     // 设置链路的数据速率。
+		qbb.SetChannelAttribute("Delay", StringValue(link_delay));      // 设置链路的延迟。
 
-		if (error_rate > 0)
+		if (error_rate > 0) // 如果错误率 error_rate 大于 0，则创建一个错误模型，并将其附加到网络设备上
 		{
-			Ptr<RateErrorModel> rem = CreateObject<RateErrorModel>();
+			Ptr<RateErrorModel> rem = CreateObject<RateErrorModel>();       // 错误模型，用于模拟链路中的随机丢包。
 			Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable>();
 			rem->SetRandomVariable(uv);
 			uv->SetStream(50);
 			rem->SetAttribute("ErrorRate", DoubleValue(error_rate));
 			rem->SetAttribute("ErrorUnit", StringValue("ERROR_UNIT_PACKET"));
-			qbb.SetDeviceAttribute("ReceiveErrorModel", PointerValue(rem));
+			qbb.SetDeviceAttribute("ReceiveErrorModel", PointerValue(rem)); // 将错误模型附加到网络设备上
 		}
 		else
 		{
-			qbb.SetDeviceAttribute("ReceiveErrorModel", PointerValue(rem));
+			qbb.SetDeviceAttribute("ReceiveErrorModel", PointerValue(rem)); // 将错误模型附加到网络设备上
 		}
 
-		fflush(stdout);
+		fflush(stdout); // 确保数据立即写入stdout，而不是缓存在内存中。
 
 		// Assigne server IP
 		// Note: this should be before the automatic assignment below (ipv4.Assign(d)),
 		// because we want our IP to be the primary IP (first in the IP address list),
 		// so that the global routing is based on our IP
-		NetDeviceContainer d = qbb.Install(snode, dnode);
-		if (snode->GetNodeType() == 0){
+		NetDeviceContainer d = qbb.Install(snode, dnode);               // 在 snode 和 dnode 之间安装网络设备和信道，并返回设备容器 d
+		if (snode->GetNodeType() == 0){                                 // 如果源节点是服务器（host），则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = snode->GetObject<Ipv4>();
 			ipv4->AddInterface(d.Get(0));
 			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000)));
 		}
-		if (dnode->GetNodeType() == 0){
+		if (dnode->GetNodeType() == 0){                                 // 如果目的节点是服务器（host），则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
 			ipv4->AddInterface(d.Get(1));
 			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
 		}
 
-		// used to create a graph of the topology
+		// used to create a graph of the topology 将链路的索引、状态、延迟和带宽等信息记录到 nbr2if 中。
 		nbr2if[snode][dnode].idx = DynamicCast<QbbNetDevice>(d.Get(0))->GetIfIndex();
 		nbr2if[snode][dnode].up = true;
 		nbr2if[snode][dnode].delay = DynamicCast<QbbChannel>(DynamicCast<QbbNetDevice>(d.Get(0))->GetChannel())->GetDelay().GetTimeStep();
@@ -832,13 +834,13 @@ int main(int argc, char *argv[])
 		nbr2if[dnode][snode].delay = DynamicCast<QbbChannel>(DynamicCast<QbbNetDevice>(d.Get(1))->GetChannel())->GetDelay().GetTimeStep();
 		nbr2if[dnode][snode].bw = DynamicCast<QbbNetDevice>(d.Get(1))->GetDataRate().GetBitRate();
 
-		// This is just to set up the connectivity between nodes. The IP addresses are useless
+		// This is just to set up the connectivity between nodes. The IP addresses are useless 为链路分配临时的 IP 地址，用于建立节点之间的连通性。
 		char ipstring[16];
 		sprintf(ipstring, "10.%d.%d.0", i / 254 + 1, i % 254 + 1);
 		ipv4.SetBase(ipstring, "255.255.255.0");
 		ipv4.Assign(d);
 
-		// setup PFC trace
+		// setup PFC trace 为每个网络设备设置 PFC 跟踪，用于记录 PFC 事件到文件中
 		DynamicCast<QbbNetDevice>(d.Get(0))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(0)))); // pfc.txt
 		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1)))); // pfc.txt
 	}
