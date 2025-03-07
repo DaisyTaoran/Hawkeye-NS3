@@ -30,8 +30,8 @@ class SwitchNode : public Node{
 	// RDMA NPA
 	static const uint32_t flowHashSeed = 0x233;	// Seed for flow hash
 	static const uint32_t flowEntryNum = (1 << 10);	// Number of flowTelemetryData entries
-	static const uint32_t epoch = 1000000;		// 可能是时间戳
-	static const uint32_t epochNum = 2;	
+	static const uint32_t epoch = 1000000;		// 可能是时间窗口长度
+	static const uint32_t epochNum = 2;		// 时间窗口数量
 	static const uint32_t egressThreshold = 64 * 1024;	// signal threshold 信号阈值
 	static const uint32_t rateThreshold = 1024 * 1024 * 1024 * epoch / 1000000000 / 8;	// rate threshold??	1Gbps
 	// static const uint32_t pausedPacketThreshold = 10;	// pfc paused packet threshold
@@ -88,8 +88,8 @@ private:
 	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);				// 根据目的ip等，返回下一跳出口的端口号
 	void SendToDev(Ptr<Packet>p, CustomHeader &ch);					// 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值。
-	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				// 尝试设置暂停状态，并发送pfc Pause包。
-	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			// 尝试取消暂停状态，并发送pfc Resume包。
+	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				// 尝试设置暂停状态，并广播发送pfc Pause包。
+	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			// 尝试取消暂停状态，并广播发送pfc Resume包。
 	// RDMA NPA
 	static uint32_t FiveTupleHash(const FiveTuple &fiveTuple);
 	static uint32_t GetEpochIdx();

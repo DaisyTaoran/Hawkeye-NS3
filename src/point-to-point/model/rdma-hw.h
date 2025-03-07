@@ -59,7 +59,7 @@ public:
 	void DeleteRxQp(uint32_t dip, uint16_t pg, uint16_t dport);
 
 	int ReceiveUdp(Ptr<Packet> p, CustomHeader &ch);
-	int ReceiveCnp(Ptr<Packet> p, CustomHeader &ch);
+	int ReceiveCnp(Ptr<Packet> p, CustomHeader &ch); // 用于处理接收到的CNP（Congestion Notification Packet，拥塞通知包）
 	int ReceiveAck(Ptr<Packet> p, CustomHeader &ch); // handle both ACK and NACK 检测到性能下降后，设置轮询包。即实现agent功能
 	int Receive(Ptr<Packet> p, CustomHeader &ch); // callback function that the QbbNetDevice should use when receive packets. Only NIC can call this function. And do not call this upon PFC
 

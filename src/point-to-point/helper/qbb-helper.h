@@ -147,13 +147,13 @@ public:
    */
   NetDeviceContainer Install (std::string aNode, std::string bNode);
 
-  static void GetTraceFromPacket(TraceFormat &tr, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx, Event event, bool hasL2);
-  static void PacketEventCallback(FILE *file, Ptr<QbbNetDevice>, Ptr<const Packet>, uint32_t qidx, Event event, bool hasL2);
-  static void MacRxDetailCallback (FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p);
-  static void EnqueueDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx);
-  static void DequeueDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx);
-  static void DropDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx);
-  static void QpDequeueCallback(FILE *file, Ptr<QbbNetDevice>, Ptr<const Packet>, Ptr<RdmaQueuePair>);
+  static void GetTraceFromPacket(TraceFormat &tr, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx, Event event, bool hasL2); // 根据packege信息构建TraceFormat对象
+  static void PacketEventCallback(FILE *file, Ptr<QbbNetDevice>, Ptr<const Packet>, uint32_t qidx, Event event, bool hasL2); // 根据packege信息构建TraceFormat对象，并写入trace_out_file文件  
+  static void MacRxDetailCallback (FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p);                 // 调用 PacketEventCallback 函数
+  static void EnqueueDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx); // 调用 PacketEventCallback 函数
+  static void DequeueDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx); // 调用 PacketEventCallback 函数
+  static void DropDetailCallback(FILE* file, Ptr<QbbNetDevice>, Ptr<const Packet> p, uint32_t qidx);    // 调用 PacketEventCallback 函数
+  static void QpDequeueCallback(FILE *file, Ptr<QbbNetDevice>, Ptr<const Packet>, Ptr<RdmaQueuePair>);  // 根据packege信息构建TraceFormat对象，并写入trace_out_file文件  
 
   void EnableTracingDevice(FILE *file, Ptr<QbbNetDevice>);      // 被EnableTracing调用
 
