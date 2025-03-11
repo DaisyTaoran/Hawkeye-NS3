@@ -368,8 +368,8 @@ void QbbHelper::GetTraceFromPacket(TraceFormat &tr, Ptr<QbbNetDevice> dev, Ptr<c
 
 void QbbHelper::PacketEventCallback(FILE *file, Ptr<QbbNetDevice> dev, Ptr<const Packet> p, uint32_t qidx, Event event, bool hasL2){
 	TraceFormat tr;
-	GetTraceFromPacket(tr, dev, p, qidx, event, hasL2);
-	tr.Serialize(file);
+	GetTraceFromPacket(tr, dev, p, qidx, event, hasL2); // 根据packege信息构建TraceFormat对象
+	tr.Serialize(file); // 在trace_out_file文件中写入TraceFormat结构体对象。需要用十六进制编辑器，或者使用C程序读取。参考mix/readMix.c程序
 }
 
 void QbbHelper::MacRxDetailCallback (FILE* file, Ptr<QbbNetDevice> dev, Ptr<const Packet> p){
@@ -390,8 +390,8 @@ void QbbHelper::DropDetailCallback(FILE* file, Ptr<QbbNetDevice> dev, Ptr<const 
 
 void QbbHelper::QpDequeueCallback(FILE *file, Ptr<QbbNetDevice> dev, Ptr<const Packet> p, Ptr<RdmaQueuePair> qp){
 	TraceFormat tr;
-	GetTraceFromPacket(tr, dev, p, qp->m_pg, Dequ, true);
-	tr.Serialize(file);
+	GetTraceFromPacket(tr, dev, p, qp->m_pg, Dequ, true); // 根据packege信息构建TraceFormat对象
+	tr.Serialize(file); // 在trace_out_file文件中写入TraceFormat对象
 }
 
 void QbbHelper::EnableTracingDevice(FILE *file, Ptr<QbbNetDevice> nd){
@@ -400,7 +400,7 @@ void QbbHelper::EnableTracingDevice(FILE *file, Ptr<QbbNetDevice> nd){
 	std::ostringstream oss;
 
 	#if 1
-	nd->TraceConnectWithoutContext("MacRx", MakeBoundCallback(&QbbHelper::MacRxDetailCallback, file, nd));
+	nd->TraceConnectWithoutContext("MacRx", MakeBoundCallback(&QbbHelper::MacRxDetailCallback, file, nd)); // MacRx：Trace源之一，表示数据包接收事件。
 	//oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
 	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::MacRxDetailCallback, file, nd));
 

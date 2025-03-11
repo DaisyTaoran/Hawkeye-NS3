@@ -64,7 +64,7 @@ struct TraceFormat{
 		}qp;
 	};
 
-	void Serialize(FILE *file){
+	void Serialize(FILE *file){ // 在trace_out_file文件中写入TraceFormat对象
 		fwrite(this, sizeof(TraceFormat), 1, file);
 	}
 	int Deserialize(FILE *file){
