@@ -199,8 +199,8 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		}
 		return;	
 	}
-	//RDMA NPA : polling packet parse 轮询包分析
-	else if(ch.l3Prot == 0xFA){
+	//RDMA NPA : polling packet parse 轮询包分析。收到轮询数据包后，HW把交换机上的遥测数据轮询到分析器。
+	else if(ch.l3Prot == 0xFA){ // 如果是轮询包
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();

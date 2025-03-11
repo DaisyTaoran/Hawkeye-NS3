@@ -856,7 +856,7 @@ int main(int argc, char *argv[])
 				Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(j));
 				// set ecn
 				uint64_t rate = dev->GetDataRate().GetBitRate();
-				NS_ASSERT_MSG(rate2kmin.find(rate) != rate2kmin.end(), "must set kmin for each link speed");
+				NS_ASSERT_MSG(rate2kmin.find(rate) != rate2kmin.end(), "must set kmin for each link speed"); // 若没有为rate设置kmin，则输出消息并终止程序
 				NS_ASSERT_MSG(rate2kmax.find(rate) != rate2kmax.end(), "must set kmax for each link speed");
 				NS_ASSERT_MSG(rate2pmax.find(rate) != rate2pmax.end(), "must set pmax for each link speed");
 				sw->m_mmu->ConfigEcn(j, rate2kmin[rate], rate2kmax[rate], rate2pmax[rate]);
@@ -878,7 +878,7 @@ int main(int argc, char *argv[])
 
 			//RDMA NPA detect temp
 			char telemetry_path[100];
-			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);     // 每个switch有一个telemetry文件
+			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);     // 每个switch有一个telemetry文件，i 是节点索引
 			sw->fp_telemetry = fopen(telemetry_path, "w");
 
 		}
@@ -918,9 +918,9 @@ int main(int argc, char *argv[])
 			rdmaHw->SetPintSmplThresh(pint_prob);
 
 			// RDMA NPA
-			if(agent_nodes.find(i) != agent_nodes.end())
+			if(agent_nodes.find(i) != agent_nodes.end()) // 是agent_node
 				rdmaHw->m_agent_flag = true;
-			else
+			else                                         // 不是agent_node
 				rdmaHw->m_agent_flag = false;
 			if(no_cc_nodes.find(i) != no_cc_nodes.end())
 				rdmaHw->SetAttribute("CcMode", UintegerValue(0));
@@ -930,9 +930,10 @@ int main(int argc, char *argv[])
 			rdma->SetNode(node);            // 函数在 point-to-point/model/rdma-driver.h 中，把节点 node[i] 安装到RDMA驱动中
 			rdma->SetRdmaHw(rdmaHw);        // 函数在 point-to-point/model/rdma-driver.h 中，把   rdmaHw 网卡安装到RDMA驱动中
 
-			node->AggregateObject (rdma);   // 函数在 core/model/object.h 中，将构件（各种协议）聚合到节点 node[i] 中
+			node->AggregateObject (rdma);   // 函数在 core/model/object.h 中，将rdma驱动构件（各种协议）聚合到节点 node[i] 中
 			rdma->Init();                   // 函数在 point-to-point/model/rdma-driver.h 中，根据已安装的 rdmaHw 网卡进行初始化
 			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output)); // 追踪绑定参数的回调qp_finish，但是不携带上下文信息；fct.txt
+			// qp_finish 函数处理 RDMA 队列对（Queue Pair, QP）的结束操作。
 		}
 	}
 	#endif
@@ -944,8 +945,8 @@ int main(int argc, char *argv[])
 		RdmaEgressQueue::ack_q_idx = 3;
 
 	// setup routing
-	CalculateRoutes(n);
-	SetRoutingEntries();
+	CalculateRoutes(n);     // 计算全局下一跳信息
+	SetRoutingEntries();    // 根据下一跳信息，计算路由表条目
 
 	//
 	// get BDP and delay
@@ -1009,7 +1010,7 @@ int main(int argc, char *argv[])
 			for (auto j : i.second){
 				uint16_t node = i.first->GetId();
 				uint8_t intf = j.second.idx;
-				uint64_t bps = DynamicCast<QbbNetDevice>(i.first->GetDevice(j.second.idx))->GetDataRate().GetBitRate();
+				uint64_t bps = DynamicCast<QbbNetDevice>(i.first->GetDevice(j.second.idx))->GetDataRate().GetBitRate(); // bps = Bit每Per秒Second
 				sim_setting.port_speed[node][intf] = bps;
 			}
 		}
@@ -1024,8 +1025,8 @@ int main(int argc, char *argv[])
 	Time interPacketInterval = Seconds(0.0000005 / 2);
 
 	// maintain port number for each host
-	for (uint32_t i = 0; i < node_num; i++){
-		if (n.Get(i)->GetNodeType() == 0)
+	for (uint32_t i = 0; i < node_num; i++){ // 遍历从 host 到 host 的端口数量
+		if (n.Get(i)->GetNodeType() == 0) 
 			for (uint32_t j = 0; j < node_num; j++){
 				if (n.Get(j)->GetNodeType() == 0)
 					portNumder[i][j] = 10000; // each host pair use port number from 10000
@@ -1035,7 +1036,7 @@ int main(int argc, char *argv[])
 	flow_input.idx = 0;
 	if (flow_num > 0){
 		ReadFlowInput();        // 从文件中读取一行流信息，其中包括flow_input.start_time
-		Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs);
+		Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs); // 计划在start_time时，按计划读取当时所有流信息
 	}
 
 	topof.close();
@@ -1048,7 +1049,7 @@ int main(int argc, char *argv[])
 
 	// schedule buffer monitor
 	FILE* qlen_output = fopen(qlen_mon_file.c_str(), "w");
-	Simulator::Schedule(NanoSeconds(qlen_mon_start), &monitor_buffer, qlen_output, &n);
+	Simulator::Schedule(NanoSeconds(qlen_mon_start), &monitor_buffer, qlen_output, &n); // 计划在过了 qlen_mon_start 时间后再次调用monitor_buffer函数，实现定期监控。
 
 	//
 	// Now, do the actual simulation.

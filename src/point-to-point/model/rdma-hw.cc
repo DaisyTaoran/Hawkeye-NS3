@@ -424,23 +424,24 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 	}
 
 	//RDMA NPA agent; agent是一个完全自主的系统，能够在长时间内独立运行，通常会牺牲延迟和成本来换取更好的任务性能
-	if(m_agent_flag){
+	if(m_agent_flag){ // 如果是agent_node
 		uint64_t rtt = Simulator::Now().GetTimeStep() - ch.ack.ih.ts;
-		uint64_t interval = Simulator::Now().GetTimeStep() - qp->npa.m_lastPollingTime;
-		if(interval > 1000000){
-			if(rtt > qp->npa.m_maxRtt && rtt > 10000){ // 检测到流性能下降
-				qp->npa.m_maxRtt = rtt; // 记录当前rtt
-				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep(); // 设置轮询时间，以准备发送轮询包
+		uint64_t interval = Simulator::Now().GetTimeStep() - qp->npa.m_lastPollingTime; // 距离上一次轮询的时间间隔
+		if(interval > 1000000){ // 若离上一次轮询隔了很久，甚至大于一百万
+			if(rtt > qp->npa.m_maxRtt && rtt > 10000){ // 若检测到流性能下降，即rtt过大
+				qp->npa.m_maxRtt = rtt; // 更新历史最大rtt
+				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep(); // 令：上一次轮询时间 = 当前时间
 			} 
 		}
-		if (qp->npa.m_maxRtt > 10000 && (Simulator::Now().GetTimeStep() % 1000000 > 900000)){
-			qp->npa.m_maxRtt = 0;
-
+		if (qp->npa.m_maxRtt > 10000 && (Simulator::Now().GetTimeStep() % 1000000 > 900000)){ // 当历史最大RTT超过 10000，并且在特定时间窗口内：触发轮询包发送
+			qp->npa.m_maxRtt = 0;					// 重置历史最大rtt
+			// 构造轮询数据包
 			Ptr<Packet> p = Create<Packet>(0);
 			CustomHeader pollingHdr(CustomHeader::L4_Header);	// 初始化轮询包头部
-			pollingHdr.l3Prot = 0xFA;				// L3协议设置为轮询数据包
-			pollingHdr.polling.seq = ch.ack.seq;
+			pollingHdr.l3Prot = 0xFA;				// L3协议类型设置为轮询数据包
+			pollingHdr.polling.seq = ch.ack.seq;			// 设置序列号
 			p->AddHeader(pollingHdr);
+			// 添加ipv4头
 			Ipv4Header head;
 			head.SetDestination(Ipv4Address(ch.sip));		// 轮询包的目的IP==ch的源ip
 			head.SetSource(Ipv4Address(ch.dip));			// 轮询包的源IP==ch的目的ip
@@ -448,11 +449,11 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 			head.SetTtl(64);
 			head.SetPayloadSize(p->GetSize());
 			head.SetIdentification(qp->m_ipid++);
-			p->AddHeader(head);
-			AddHeader(p, 0x800);
-
-			dev->RdmaEnqueueHighPrioQ(p);
-			dev->TriggerTransmit();
+			p->AddHeader(head);					// 将IPv4头添加到数据包中
+			AddHeader(p, 0x800);					// 添加以太网头（0x800 表示IPv4协议）
+			// 发送轮询数据包
+			dev->RdmaEnqueueHighPrioQ(p);				// 将轮询数据包放入高优先级队列
+			dev->TriggerTransmit();					// 触发传输
 		}
 	}
 
