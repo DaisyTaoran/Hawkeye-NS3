@@ -406,7 +406,8 @@ void QbbHelper::EnableTracingDevice(FILE *file, Ptr<QbbNetDevice> nd){
 	nd->TraceConnectWithoutContext("QbbDrop", MakeBoundCallback (&QbbHelper::DropDetailCallback, file, nd));
 	nd->TraceConnectWithoutContext("RdmaQpDequeue", MakeBoundCallback (&QbbHelper::QpDequeueCallback, file, nd));
 	#endif
-	/* 
+	
+	#if 0 
 	oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
 	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::MacRxDetailCallback, file, nd));
 	
@@ -429,7 +430,7 @@ void QbbHelper::EnableTracingDevice(FILE *file, Ptr<QbbNetDevice> nd){
 	oss.str ("");
 	oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/RdmaEgressQueue/RdmaDequeue";
 	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
-	*/
+	#endif
 }
 
 void QbbHelper::EnableTracing(FILE *file, NodeContainer node_container){

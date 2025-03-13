@@ -1054,6 +1054,10 @@ int main(int argc, char *argv[])
 	//
 	// Now, do the actual simulation.
 	//
+	
+	AsciiTraceHelper ascii;
+        qbb.EnableAsciiAll(ascii.CreateFileStream("mythird.tr"));
+	
 	std::cout << "Running Simulation.\n";
 	fflush(stdout);
 	NS_LOG_INFO("Run Simulation.");
