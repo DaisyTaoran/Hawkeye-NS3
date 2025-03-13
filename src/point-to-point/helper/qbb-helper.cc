@@ -112,19 +112,19 @@ QbbHelper::EnablePcapInternal (std::string prefix, Ptr<NetDevice> nd, bool promi
   pcapHelper.HookDefaultSink<QbbNetDevice> (device, "PromiscSniffer", file);
 }
 
-void 
+void // 启用ASCII跟踪功能，主要用于记录网络设备（如 QbbNetDevice）的接收、发送、入队、出队和丢包等事件，并将这些事件以ASCII格式输出到指定的文件中
 QbbHelper::EnableAsciiInternal (
-  Ptr<OutputStreamWrapper> stream, 
-  std::string prefix, 
-  Ptr<NetDevice> nd,
-  bool explicitFilename)
+  Ptr<OutputStreamWrapper> stream,      // 输出流包装器（OutputStreamWrapper），用于指定输出文件。
+  std::string prefix,                   // 文件名前缀或完整文件名。
+  Ptr<NetDevice> nd,                    // 网络设备（NetDevice），需要启用跟踪的设备。
+  bool explicitFilename)                // 布尔值，指示是否使用 prefix 作为完整文件名。
 {
   //
   // All of the ascii enable functions vector through here including the ones
   // that are wandering through all of devices on perhaps all of the nodes in
   // the system.  We can only deal with devices of type QbbNetDevice.
   //
-  Ptr<QbbNetDevice> device = nd->GetObject<QbbNetDevice> ();
+  Ptr<QbbNetDevice> device = nd->GetObject<QbbNetDevice> (); // 将 NetDevice 转换为 QbbNetDevice 类型。
   if (device == 0)
     {
       NS_LOG_INFO ("QbbHelper::EnableAsciiInternal(): Device " << device << 
@@ -136,7 +136,7 @@ QbbHelper::EnableAsciiInternal (
   // Our default trace sinks are going to use packet printing, so we have to 
   // make sure that is turned on.
   //
-  Packet::EnablePrinting ();
+  Packet::EnablePrinting (); // 启用数据包的打印功能，以便在跟踪中记录数据包的内容。
 
   //
   // If we are not provided an OutputStreamWrapper, we are expected to create 
@@ -144,7 +144,7 @@ QbbHelper::EnableAsciiInternal (
   // since there will be one file per context and therefore the context would
   // be redundant.
   //
-  if (stream == 0)
+  if (stream == 0) // 如果 stream 为 NULL，则创建一个新的输出流：
     {
       //
       // Set up an output stream object to deal with private ofstream copy 
@@ -153,22 +153,22 @@ QbbHelper::EnableAsciiInternal (
       //
       AsciiTraceHelper asciiTraceHelper;
 
-      std::string filename;
-      if (explicitFilename)
+      std::string filename; 
+      if (explicitFilename)     // 文件名为参数prefix
         {
           filename = prefix;
         }
-      else
+      else                      // 若不使用参数prefix，生成新文件名
         {
           filename = asciiTraceHelper.GetFilenameFromDevice (prefix, device);
         }
 
-      Ptr<OutputStreamWrapper> theStream = asciiTraceHelper.CreateFileStream (filename);
+      Ptr<OutputStreamWrapper> theStream = asciiTraceHelper.CreateFileStream (filename); // 创建文件输出流
 
       //
       // The MacRx trace source provides our "r" event.
       //
-      asciiTraceHelper.HookDefaultReceiveSinkWithoutContext<QbbNetDevice> (device, "MacRx", theStream);
+      asciiTraceHelper.HookDefaultReceiveSinkWithoutContext<QbbNetDevice> (device, "MacRx", theStream); // 将设备的数据包接收事件绑定到输出流。
 
       //
       // The "+", '-', and 'd' events are driven by trace sources actually in the
@@ -178,12 +178,12 @@ QbbHelper::EnableAsciiInternal (
 	  //std::cout<<"Hook Callback\n";
 
       Ptr<BEgressQueue> queue = device->GetQueue ();
-      asciiTraceHelper.HookDefaultEnqueueSinkWithoutContext<BEgressQueue> (queue, "Enqueue", theStream);
-      asciiTraceHelper.HookDefaultDropSinkWithoutContext<BEgressQueue> (queue, "Drop", theStream);
-      asciiTraceHelper.HookDefaultDequeueSinkWithoutContext<BEgressQueue> (queue, "Dequeue", theStream);
+      asciiTraceHelper.HookDefaultEnqueueSinkWithoutContext<BEgressQueue> (queue, "Enqueue", theStream); // 将设备的队列入队事件绑定到输出流。
+      asciiTraceHelper.HookDefaultDropSinkWithoutContext<BEgressQueue> (queue, "Drop", theStream);       // 将设备的队列丢包事件绑定到输出流。
+      asciiTraceHelper.HookDefaultDequeueSinkWithoutContext<BEgressQueue> (queue, "Dequeue", theStream); // 将设备的队列出队事件绑定到输出流。
 
       // PhyRxDrop trace source for "d" event
-      asciiTraceHelper.HookDefaultDropSinkWithoutContext<QbbNetDevice> (device, "PhyRxDrop", theStream);
+      asciiTraceHelper.HookDefaultDropSinkWithoutContext<QbbNetDevice> (device, "PhyRxDrop", theStream); // 将设备的物理层丢包事件绑定到输出流。
 
       return;
     }
@@ -204,9 +204,9 @@ QbbHelper::EnableAsciiInternal (
   uint32_t deviceid = nd->GetIfIndex ();
   std::ostringstream oss;
 
-  oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
+  oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx"; // 构建跟踪事件的路径
   //oss << "/N/" << nd->GetNode ()->GetId () << "/D/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
-  Config::Connect (oss.str (), MakeBoundCallback (&AsciiTraceHelper::DefaultReceiveSinkWithContext, stream));
+  Config::Connect (oss.str (), MakeBoundCallback (&AsciiTraceHelper::DefaultReceiveSinkWithContext, stream)); // 将事件路径与回调函数绑定，回调函数会将事件记录到输出流中。
 
   oss.str ("");
   oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/TxBeQueue/Enqueue";
@@ -401,33 +401,35 @@ void QbbHelper::EnableTracingDevice(FILE *file, Ptr<QbbNetDevice> nd){
 
 	#if 1
 	nd->TraceConnectWithoutContext("MacRx", MakeBoundCallback(&QbbHelper::MacRxDetailCallback, file, nd)); // MacRx：Trace源之一，表示数据包接收事件。
-	//oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
-	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::MacRxDetailCallback, file, nd));
-
 	nd->TraceConnectWithoutContext("QbbEnqueue", MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
 	nd->TraceConnectWithoutContext("QbbDequeue", MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
 	nd->TraceConnectWithoutContext("QbbDrop", MakeBoundCallback (&QbbHelper::DropDetailCallback, file, nd));
 	nd->TraceConnectWithoutContext("RdmaQpDequeue", MakeBoundCallback (&QbbHelper::QpDequeueCallback, file, nd));
 	#endif
+	/* 
+	oss << "/NodeList/" << nd->GetNode ()->GetId () << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/MacRx";
+	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::MacRxDetailCallback, file, nd));
+	
 	//nd->GetQueue()->TraceConnectWithoutContext("BeqEnqueue", MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
-	//oss.str ("");
-	//oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/TxBeQueue/BeqEnqueue";
-	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
+	oss.str ("");
+	oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/TxBeQueue/BeqEnqueue";
+	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
 
 	//nd->GetQueue()->TraceConnectWithoutContext("BeqDequeue", MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
-	//oss.str ("");
-	//oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/TxBeQueue/BeqDequeue";
-	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
+	oss.str ("");
+	oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/TxBeQueue/BeqDequeue";
+	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
 
 	//nd->GetRdmaQueue()->TraceConnectWithoutContext("RdmaEnqueue", MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
-	//oss.str ("");
-	//oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/RdmaEgressQueue/RdmaEnqueue";
-	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
+	oss.str ("");
+	oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/RdmaEgressQueue/RdmaEnqueue";
+	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::EnqueueDetailCallback, file, nd));
 
 	//nd->GetRdmaQueue()->TraceConnectWithoutContext("RdmaDequeue", MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
-	//oss.str ("");
-	//oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/RdmaEgressQueue/RdmaDequeue";
-	//Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
+	oss.str ("");
+	oss << "/NodeList/" << nodeid << "/DeviceList/" << deviceid << "/$ns3::QbbNetDevice/RdmaEgressQueue/RdmaDequeue";
+	Config::ConnectWithoutContext (oss.str (), MakeBoundCallback (&QbbHelper::DequeueDetailCallback, file, nd));
+	*/
 }
 
 void QbbHelper::EnableTracing(FILE *file, NodeContainer node_container){

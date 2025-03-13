@@ -307,10 +307,10 @@ namespace ns3 {
 				FlowIdTag t;
 				uint32_t qIndex = m_queue->GetLastQueue();
 				if (qIndex == 0){//this is a pause or cnp, send it immediately!
-					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);
+					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);      // 通知交换机，数据包p已经从端口队列中出队
 					p->RemovePacketTag(t);
 				}else{
-					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);
+					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);      // 通知交换机，数据包p已经从端口队列中出队
 					p->RemovePacketTag(t);
 				}
 				m_traceDequeue(p, qIndex);

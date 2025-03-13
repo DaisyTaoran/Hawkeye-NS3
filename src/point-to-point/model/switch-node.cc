@@ -50,7 +50,7 @@ SwitchNode::SwitchNode(){
 	for (uint32_t i = 0; i < pCnt; i++)
 		for (uint32_t j = 0; j < pCnt; j++)
 			for (uint32_t k = 0; k < qCnt; k++)
-				m_bytes[i][j][k] = 0;
+				m_bytes[i][j][k] = 0;		// 从端口i去端口j，在队列k处等待的bytes
 	for (uint32_t i = 0; i < pCnt; i++)
 		m_txBytes[i] = 0;
 	for (uint32_t i = 0; i < pCnt; i++)
@@ -120,9 +120,9 @@ void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发�
 }
 void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);
-	if (m_mmu->CheckShouldResume(inDev, qIndex)){
+	if (m_mmu->CheckShouldResume(inDev, qIndex)){	// 若此队列需要发pfc Resume包:
 		device->SendPfc(qIndex, 1);
-		m_mmu->SetResume(inDev, qIndex);	// 把此队列取消pause状态。
+		m_mmu->SetResume(inDev, qIndex);		// 把此队列取消pause状态。
 	}
 }
 
@@ -426,7 +426,7 @@ bool SwitchNode::SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> pack
 	return true;
 }
 
-void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){ // 通知交换机，数据包p已经从队列中出队
+void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){ // 通知交换机，数据包p已经从队列中出队.被QbbNetDevice::DequeueAndTransmit调用
 	FlowIdTag t;
 	p->PeekPacketTag(t);
 	if (qIndex != 0){ // 非最高优先级
@@ -434,16 +434,16 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 		m_mmu->RemoveFromIngressAdmission(inDev, qIndex, p->GetSize());		// 从某入口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
 		m_mmu->RemoveFromEgressAdmission(ifIndex, qIndex, p->GetSize());	// 从某出口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
 		m_bytes[inDev][ifIndex][qIndex] -= p->GetSize();
-		if (m_ecnEnabled){
-			bool egressCongested = m_mmu->ShouldSendCN(ifIndex, qIndex);
-			if (egressCongested){
+		if (m_ecnEnabled){							// ECN 是一种网络拥塞控制机制，允许路由器在数据包中标记拥塞，而不是直接丢弃数据包。
+			bool egressCongested = m_mmu->ShouldSendCN(ifIndex, qIndex);		// 检查出口队列是否拥塞。
+			if (egressCongested){							// 如果出口队列拥塞，就用ECN标记拥塞
 				PppHeader ppp;
 				Ipv4Header h;
-				p->RemoveHeader(ppp);
-				p->RemoveHeader(h);
-				h.SetEcn((Ipv4Header::EcnType)0x03);
-				p->AddHeader(h);
-				p->AddHeader(ppp);
+				p->RemoveHeader(ppp);							// 从数据包 p 中移除 PPP 头（Point-to-Point Protocol）
+				p->RemoveHeader(h);							// 从数据包 p 中移除 IPv4 头
+				h.SetEcn((Ipv4Header::EcnType)0x03);					// 设置 IPv4 头的 ECN 字段为 0x03，表示网络中存在拥塞。
+				p->AddHeader(h);							// 将修改后的 IPv4 头重新添加到数据包
+				p->AddHeader(ppp);							// 将 PPP 头重新添加到数据包
 			}
 		}
 		//CheckAndSendPfc(inDev, qIndex);

@@ -308,14 +308,14 @@ void SetRoutingEntries(){ // 设置路由表条目。根据全局的下一跳信
 
 // take down the link between a and b, and redo the routing
 void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){ // 模拟网络中两个节点之间的链路失效（例如链路断开或故障）
-	if (!nbr2if[a][b].up)   // 如果链路已经处于失效状态
+	if (!nbr2if[a][b].up)                           // 如果链路已经处于失效状态
 		return;
 	// take down link between a and b
 	nbr2if[a][b].up = nbr2if[b][a].up = false;      // 将 a 到 b 和 b 到 a 的链路状态标记为失效
-	nextHop.clear();        // 清除下一跳信息
-	CalculateRoutes(n);     // 重新计算全局下一跳信息
+	nextHop.clear();                                // 清除下一跳信息
+	CalculateRoutes(n);                             // 重新计算全局下一跳信息
 	// clear routing tables
-	for (uint32_t i = 0; i < n.GetN(); i++){ // 遍历所有节点，并清除路由表
+	for (uint32_t i = 0; i < n.GetN(); i++){        // 遍历所有节点，并清除路由表
 		if (n.Get(i)->GetNodeType() == 1)
 			DynamicCast<SwitchNode>(n.Get(i))->ClearTable();
 		else
@@ -324,7 +324,7 @@ void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){ // 模拟网络中
 	DynamicCast<QbbNetDevice>(a->GetDevice(nbr2if[a][b].idx))->TakeDown(); // 通知设备 a 链路失效
 	DynamicCast<QbbNetDevice>(b->GetDevice(nbr2if[b][a].idx))->TakeDown(); // 通知设备 b 链路失效
 	// reset routing table
-	SetRoutingEntries();    // 根据新的路由信息，重新设置路由表。
+	SetRoutingEntries();                            // 根据新的路由信息，重新设置路由表。
 
 	// redistribute qp on each host
 	for (uint32_t i = 0; i < n.GetN(); i++){
