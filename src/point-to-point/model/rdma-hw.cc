@@ -342,44 +342,46 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	return 0;
 }
 
-int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){
+int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){ // 用于处理接收到的CNP（Congestion Notification Packet，拥塞通知包）
 	// QCN on NIC
 	// This is a Congestion signal
 	// Then, extract data from the congestion packet.
 	// We assume, without verify, the packet is destinated to me
-	uint32_t qIndex = ch.cnp.qIndex;
-	if (qIndex == 1){		//DCTCP
+	
+	// 提取CNP信息
+	uint32_t qIndex = ch.cnp.qIndex; // 队列号，拥塞发生队列的优先级
+	if (qIndex == 1){		//DCTCP。如果qIndex == 1，表示这是DCTCP（Data Center TCP）的拥塞通知，直接忽略并返回。
 		std::cout << "TCP--ignore\n";
 		return 0;
 	}
-	uint16_t udpport = ch.cnp.fid; // corresponds to the sport
-	uint8_t ecnbits = ch.cnp.ecnBits;
-	uint16_t qfb = ch.cnp.qfb;
+	uint16_t udpport = ch.cnp.fid; 	// corresponds to the sport 。UDP端口号，对应流的源端口
+	uint8_t ecnbits = ch.cnp.ecnBits;// ECN标志位，表示拥塞程度。
+	uint16_t qfb = ch.cnp.qfb;	// 队列的反馈信息。
 	uint16_t total = ch.cnp.total;
 
 	uint32_t i;
-	// get qp
-	Ptr<RdmaQueuePair> qp = GetQp(ch.sip, udpport, qIndex);
+	// get qp。查找对应的QP
+	Ptr<RdmaQueuePair> qp = GetQp(ch.sip, udpport, qIndex); 
 	if (qp == NULL)
 		std::cout << "ERROR: QCN NIC cannot find the flow\n";
 	// get nic
-	uint32_t nic_idx = GetNicIdxOfQp(qp);
-	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
-
-	if (qp->m_rate == 0)			//lazy initialization	
+	uint32_t nic_idx = GetNicIdxOfQp(qp); // 获取NIC索引
+	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev; // 根据NIC索引获取对应的网络设备
+	// 初始化QP的速率
+	if (qp->m_rate == 0)			//lazy initialization。如果QP的速率为0，表示尚未初始化，进行懒初始化	
 	{
-		qp->m_rate = dev->GetDataRate();
-		if (m_cc_mode == 1){
+		qp->m_rate = dev->GetDataRate(); // 将QP的速率初始化为网络设备的数据速率
+		if (m_cc_mode == 1){ 		// MLX（Mellanox）拥塞控制模式，设置目标速率。
 			qp->mlx.m_targetRate = dev->GetDataRate();
-		}else if (m_cc_mode == 3){	// 拥塞控制模式可能是 hpcc, use int
+		}else if (m_cc_mode == 3){	// hpcc拥塞控制模式, 设置当前速率，并根据m_multipleRate标志初始化每个跳的速率。
 			qp->hp.m_curRate = dev->GetDataRate();
 			if (m_multipleRate){
 				for (uint32_t i = 0; i < IntHeader::maxHop; i++)
 					qp->hp.hopState[i].Rc = dev->GetDataRate();
 			}
-		}else if (m_cc_mode == 7){	// 拥塞控制模式可能是 timely, use ts
+		}else if (m_cc_mode == 7){	// timely拥塞控制模式 , use ts
 			qp->tmly.m_curRate = dev->GetDataRate();
-		}else if (m_cc_mode == 10){	// 拥塞控制模式可能是 hpcc-pint
+		}else if (m_cc_mode == 10){	// hpcc-pint拥塞控制模式
 			qp->hpccPint.m_curRate = dev->GetDataRate();
 		}
 	}
@@ -428,9 +430,9 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 		uint64_t rtt = Simulator::Now().GetTimeStep() - ch.ack.ih.ts;
 		uint64_t interval = Simulator::Now().GetTimeStep() - qp->npa.m_lastPollingTime; // 距离上一次轮询的时间间隔
 		if(interval > 1000000){ // 若离上一次轮询隔了很久，甚至大于一百万
-			if(rtt > qp->npa.m_maxRtt && rtt > 10000){ // 若检测到流性能下降，即rtt过大
+			if(rtt > qp->npa.m_maxRtt && rtt > 10000){ // 若检测到rtt过大，即流性能下降
 				qp->npa.m_maxRtt = rtt; // 更新历史最大rtt
-				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep(); // 令：上一次轮询时间 = 当前时间
+				qp->npa.m_lastPollingTime = Simulator::Now().GetTimeStep(); // 更新上一次轮询时间
 			} 
 		}
 		if (qp->npa.m_maxRtt > 10000 && (Simulator::Now().GetTimeStep() % 1000000 > 900000)){ // 当历史最大RTT超过 10000，并且在特定时间窗口内：触发轮询包发送

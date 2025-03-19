@@ -84,10 +84,10 @@ SwitchNode::SwitchNode(){
 
 int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下一跳出口
 	// look up entries
-	auto entry = m_rtTable.find(ch.dip);	// 在路由表中，根据目的ip找到下一跳的入口 vector
+	auto entry = m_rtTable.find(ch.dip);	// 在路由表中，根据目的ip找到下一跳的出口vector
 
 	// no matching entry
-	if (entry == m_rtTable.end())		// 在路由表中，此目的ip没有对应的下一跳入口
+	if (entry == m_rtTable.end())		// 在路由表中，此目的ip没有对应的下一跳出口vector
 		return -1;
 
 	// entry found
@@ -111,10 +111,10 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下�
 	return nexthops[idx];
 }
 
-void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向上发pause并把此队列设为pause。
+void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向外发pause并把此队列设为pause。
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
-	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要发pfc Pause包:
-		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向上溯源，发送PFC Pause 包
+	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
+		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向外广播，发送PFC Pause 包。0表示pause。
 		m_mmu->SetPause(inDev, qIndex);			// 把此队列设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
 	}
 }
@@ -128,13 +128,13 @@ void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 
 void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 
-	//RDMA NPA : signal packet parse 信号数据包解析
+	//RDMA NPA : signal packet parse 信号数据包解析.通常用于 通知 或 触发 某些事件。通知其他设备发生了拥塞、链路故障或其他重要事件,通知源设备降低发送速率等。
 	if (ch.l3Prot == 0xFB){
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();
 		for (uint32_t idx = 0; idx < pCnt; idx++){
-			if(m_portToPortBytes[inDev][idx] > rateThreshold ){
+			if(m_portToPortBytes[inDev][idx] > rateThreshold ){ // 如果端inDev到端idx字节计数 > 速率阈值
 				if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){
 					DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 				}
@@ -169,7 +169,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 					}
 				}
 
-				epoch = (epoch + epochNum - 1) % epochNum;
+				epoch = (epoch + epochNum - 1) % epochNum; // 切换到上一个时间窗口
 				fprintf(fp_telemetry,"\n\nsignal\nlast epoch %d\n", epoch);
 
 				fprintf(fp_telemetry,"\n\nsignal\nport telemetry data for port %d\n", idx);
@@ -199,7 +199,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		}
 		return;	
 	}
-	//RDMA NPA : polling packet parse 轮询包分析。收到轮询数据包后，HW把交换机上的遥测数据轮询到分析器。
+	//RDMA NPA : polling packet parse 轮询包分析。收到轮询数据包后，HW把交换机上的遥测数据轮询到分析器。主动查询状态或信息，周期性（按固定时间间隔）
 	else if(ch.l3Prot == 0xFA){ // 如果是轮询包
 		FlowIdTag t;
 		p->PeekPacketTag(t);
@@ -208,7 +208,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){	// 端口水平遥测数据的pfc pause包
 			DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 		}
-		int epoch = GetEpochIdx();	// 时间戳，一般是模拟时间的基准点
+		int epoch = GetEpochIdx();	// 当前时间窗口
 
 		fprintf(fp_telemetry,"\n\npolling\nepoch %d\n", epoch);
 		
@@ -267,7 +267,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 	if (idx >= 0){
 		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
 
-		// determine the qIndex 算出队列号
+		// determine the qIndex 算出队列优先级
 		uint32_t qIndex;
 		if (ch.l3Prot == 0xFF || ch.l3Prot == 0xFE || (m_ackHighPrio && (ch.l3Prot == 0xFD || ch.l3Prot == 0xFC))){  //QCN or PFC or NACK, go highest priority
 			qIndex = 0; // 0 为最高优先级
@@ -314,34 +314,34 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 			uint32_t flowIdx = FiveTupleHash(fiveTuple);			// 对五元组进行 hash，获取流索引
 			auto &entry = m_flowTelemetryData[idx][epochIdx][flowIdx];	// 访问流量统计数据中特定端口、特定 epoch和特定流索引的条目。
 			bool newEntry = Simulator::Now().GetTimeStep() - entry.lastTimeStep > epoch * (epochNum - 1); // (当前时间步长 - 上一次更新时间步长)更大，则需创建新条目
-			if (entry.flowTuple == fiveTuple && !newEntry){ // 若 条目流元组=五元组 且 在最近的时间窗口内活跃,无需新建条目
-				uint32_t seq = ch.l3Prot == 0x06 ? ch.tcp.seq : ch.udp.seq;
+			if (entry.flowTuple == fiveTuple && !newEntry){ // 若 p对应条目流元组=当前p的五元组 且 在最近的时间窗口内活跃 => 无需新建条目，旧条目更新数据即可
+				uint32_t seq = ch.l3Prot == 0x06 ? ch.tcp.seq : ch.udp.seq; // 序列号，标识数据中的顺序
 				if(seq < entry.minSeq){
 					entry.minSeq = seq;
 				}
 				if(seq > entry.maxSeq){
 					entry.maxSeq = seq;
 				}
-				entry.packetNum++;
+				entry.packetNum++; // 收到p后，条目的packedgeNum加一
 				entry.enqQdepth += m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
 					entry.pfcPausedPacketNum++;
 				}
 				entry.lastTimeStep = Simulator::Now().GetTimeStep();
-			} else{ // 不在最近的时间窗口内活跃,需要新建条目
+			} else{ // 若 p对应条目流元组!=当前p的五元组 或 不在最近的时间窗口内活跃 => 需要新建条目
 				entry.flowTuple = fiveTuple;
 				entry.minSeq = entry.maxSeq = ch.l3Prot == 0x06 ? ch.tcp.seq : ch.udp.seq;
 				entry.packetNum = 1;
 				entry.enqQdepth = m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				entry.pfcPausedPacketNum = 0;
-				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
+				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){ // 若此队列处于pause状态
 					entry.pfcPausedPacketNum++;
 				}
 				entry.lastTimeStep = Simulator::Now().GetTimeStep();
 			}
 
-			auto &portEntry = m_portTelemetryData[epochIdx][idx];
-			bool newPortEntry = Simulator::Now().GetTimeStep() - portEntry.lastTimeStep > epoch * (epochNum - 1); // (当前时间步长 - 上一次更新时间步长)更大，则需创建新条目
+			auto &portEntry = m_portTelemetryData[epochIdx][idx];	// epoch 可以表示一个时间窗口，epochNum 表示当前窗口的编号
+			bool newPortEntry = Simulator::Now().GetTimeStep() - portEntry.lastTimeStep > epoch * (epochNum - 1); // (当前时间 - 上一次更新时间)更大，则需创建新条目
 			if (!newPortEntry){ // 无需新建条目
 				portEntry.enqQdepth += m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){

@@ -140,8 +140,8 @@ void ScheduleFlowInputs(){ // 按计划读取流信息
 	while (flow_input.idx < flow_num && Seconds(flow_input.start_time) == Simulator::Now()){
 		uint32_t port = portNumder[flow_input.src][flow_input.dst]++; // get a new port number 
 		RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
-		ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src));
-		appCon.Start(Time(0));
+		ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src)); // 绑定到节点src
+		appCon.Start(Time(0)); // no stop time
 
 		// get the next flow input
 		flow_input.idx++;

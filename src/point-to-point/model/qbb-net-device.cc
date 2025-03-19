@@ -406,22 +406,26 @@ namespace ns3 {
 		return true;
 	}
 
-	void QbbNetDevice::SendPfc(uint32_t qIndex, uint32_t type){     // 从此网卡的队列qIndex处向上溯源，发送PFC Pause/Resume 包
+	void QbbNetDevice::SendPfc(uint32_t qIndex, uint32_t type){     // 从此网卡的队列qIndex处向外广播，发送PFC Pause/Resume 包
 		Ptr<Packet> p = Create<Packet>(0);
+		// 将PFC帧头添加到数据包中。
 		PauseHeader pauseh((type == 0 ? m_pausetime : 0), m_queue->GetNBytes(qIndex), qIndex);
-		p->AddHeader(pauseh);
+		p->AddHeader(pauseh); 
+		// 将IPv4头部添加到数据包中。
 		Ipv4Header ipv4h;  // Prepare IPv4 header
-		ipv4h.SetProtocol(0xFE);
-		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal());
-		ipv4h.SetDestination(Ipv4Address("255.255.255.255"));
+		ipv4h.SetProtocol(0xFE); // 设置为0xFE，表示这是一个自定义协议（PFC帧）
+		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal()); // 设置源IP地址为当前节点的IP地址。
+		ipv4h.SetDestination(Ipv4Address("255.255.255.255")); // 设置目标IP地址为广播地址255.255.255.255，表示发送给子网所有设备。
 		ipv4h.SetPayloadSize(p->GetSize());
-		ipv4h.SetTtl(1);
+		ipv4h.SetTtl(1); // 设置为1，表示数据包只能在本地网络中传输。
 		ipv4h.SetIdentification(UniformVariable(0, 65536).GetValue());
-		p->AddHeader(ipv4h);
-		AddHeader(p, 0x800);
+		p->AddHeader(ipv4h); 
+		// 添加以太网头部，0x800表示IPv4协议。
+		AddHeader(p, 0x800); 
+		// 从队列0处发送数据包p，并传递自定义头部ch
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
 		p->PeekHeader(ch);
-		SwitchSend(0, p, ch);   // 从队列0处发送数据包p
+		SwitchSend(0, p, ch);   
 	}
 
 	void QbbNetDevice::SendSignal(uint32_t qIndex, uint32_t rate, uint32_t epoch, uint32_t congestionPort, bool pfcOff){

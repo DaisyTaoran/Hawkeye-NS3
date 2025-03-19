@@ -46,7 +46,23 @@ RdmaClientHelper::SetAttribute (std::string name, const AttributeValue &value)
 {
   m_factory.Set (name, value);
 }
+/*
+// 在      节点2  上：安装分析服务器
+Ptr<AnalysisServer> analysisApp = CreateObject<AnalysisServer>();
+analysisApp->SetLocal(InetSocketAddress(interfaces.GetAddress(2), 5000)); // 绑定到节点2的IP和端口5000   analysisApp->SetNode(n.Get(2))
+nodes.Get(2)->AddApplication(analysisApp);
+analysisApp->SetStartTime(Seconds(1.0));
+analysisApp->SetStopTime(Seconds(10.0));
+// 在交换机节点上：安装UDP客户端，用于向分析服务器发送数据：
+UdpEchoClientHelper echoClient(interfaces.GetAddress(2), 5000); // 目标地址为分析服务器的端口5000
+echoClient.SetAttribute("MaxPackets", UintegerValue(10));
+echoClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
+echoClient.SetAttribute("PacketSize", UintegerValue(1024));
 
+ApplicationContainer clientApps = echoClient.Install(nodes.Get(0));
+clientApps.Start(Seconds(2.0));
+clientApps.Stop(Seconds(10.0));
+*/
 ApplicationContainer
 RdmaClientHelper::Install (NodeContainer c)
 {
