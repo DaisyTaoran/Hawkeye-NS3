@@ -430,7 +430,7 @@ namespace ns3 {
 
 	void QbbNetDevice::SendSignal(uint32_t qIndex, uint32_t rate, uint32_t epoch, uint32_t congestionPort, bool pfcOff){
 		Ptr<Packet> p = Create<Packet>(0);
-
+                // 将IPv4头部添加到数据包中。
 		Ipv4Header ipv4h;  // Prepare IPv4 header
 		ipv4h.SetProtocol(0xFB);
 		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal());
@@ -440,7 +440,7 @@ namespace ns3 {
 		ipv4h.SetIdentification(UniformVariable(0, 65536).GetValue());
 		p->AddHeader(ipv4h);
 		AddHeader(p, 0x800);
-
+                // 从队列0处发送数据包p，并传递自定义头部ch
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
 		p->PeekHeader(ch);
 		ch.headerType |= CustomHeader::L4_Header;

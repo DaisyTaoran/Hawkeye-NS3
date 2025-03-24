@@ -73,7 +73,7 @@ RdmaClient::GetTypeId (void)
                    UintegerValue (0),
                    MakeUintegerAccessor (&RdmaClient::m_dport),
                    MakeUintegerChecker<uint16_t> ())
-	.AddAttribute ("PriorityGroup", "The priority group of this flow",
+    .AddAttribute ("PriorityGroup", "The priority group of this flow",
 				   UintegerValue (0),
 				   MakeUintegerAccessor (&RdmaClient::m_pg),
 				   MakeUintegerChecker<uint16_t> ())

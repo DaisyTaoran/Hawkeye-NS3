@@ -37,6 +37,7 @@
 #include <ns3/rdma-driver.h>
 #include <ns3/switch-node.h>
 #include <ns3/sim-setting.h>
+#include <ns3/analysis-client-server-helper.h>
 
 using namespace ns3;
 using namespace std;
@@ -729,14 +730,15 @@ int main(int argc, char *argv[])
 
 
 	//n.Create(node_num);
-	std::vector<uint32_t> node_type(node_num, 0);
+	node_num++; // TODO:+1表示额外的分析服务器，类型是Node
+	std::vector<uint32_t> node_type(node_num, 0); 
 	for (uint32_t i = 0; i < switch_num; i++)
 	{
 		uint32_t sid;
 		topof >> sid;
 		node_type[sid] = 1;
 	}
-	for (uint32_t i = 0; i < node_num; i++){
+	for (uint32_t i = 0; i < node_num; i++){ 
 		if (node_type[i] == 0)
 			n.Add(CreateObject<Node>()); // 函数在 network/helper/node-container.h 中
 		else{
@@ -748,15 +750,15 @@ int main(int argc, char *argv[])
 
 
 	NS_LOG_INFO("Create nodes.");
-
+        // 安装协议栈
 	InternetStackHelper internet;
 	internet.Install(n);
 
 	//
-	// Assign IP to each server(host)
+	// Assign IP to each server
 	//
 	for (uint32_t i = 0; i < node_num; i++){
-		if (n.Get(i)->GetNodeType() == 0){ // is host server
+		if (n.Get(i)->GetNodeType() == 0){ // is server
 			serverAddress.resize(i + 1);
 			serverAddress[i] = node_id_to_ip(i);
 		}
@@ -844,7 +846,71 @@ int main(int argc, char *argv[])
 		DynamicCast<QbbNetDevice>(d.Get(0))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(0)))); // pfc.txt
 		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1)))); // pfc.txt
 	}
+	
+	// TODO:为所有交换机和分析服务器n[node_num-1]建立链路
+	Ipv4InterfaceContainer interfaces;
+        PointToPointHelper p2p;
+	for (uint32_t i = 0; i < node_num; i++){
+	        if (node_type[i] == 1){ // 如果是switch，就为它和分析器建立链路
+	                uint32_t src = i, dst = node_num-1;
+		        std::string data_rate = "100Gbps", link_delay = "0.001ms";
+		        Ptr<Node> snode = n.Get(src), dnode = n.Get(dst);               
+                        // 设置点到点链路
+		        p2p.SetDeviceAttribute("DataRate", StringValue(data_rate));     
+		        p2p.SetChannelAttribute("Delay", StringValue(link_delay));     
+		        
+		        fflush(stdout);
+		        
+                        // 安装网络设备
+		        NetDeviceContainer d = p2p.Install(snode, dnode);
+		        // 安装协议栈;
+		        if (dnode->GetNodeType() == 0){                                 
+			        Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
+			        ipv4->AddInterface(d.Get(1));
+			        ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
+		        }
+		        // 分配 IPv 地址，用于建立节点之间的连通性。
+		        char ipstring[16];
+		        sprintf(ipstring, "10.%d.%d.0", (i+link_num) / 254 + 1, (i+link_num) % 254 + 1);
+		        ipv4.SetBase(ipstring, "255.255.255.0");
+		        interfaces = ipv4.Assign(d);
+		        
+		        // 安装UDP客户端
+		        /*
+                        
+                        Ptr<AnalysisClient> analysisApp = CreateObject<AnalysisClient>();
+                        analysisApp->SetAnalysisServer(interfaces.GetAddress(dst), 200);
+                        analysisApp->SetLocal(interfaces.GetAddress(src), 200); // 绑定到分析器节点的IP和端口
+                        analysisApp->SetSignalInterval(Seconds(1)); // 设置信号发送间隔为1秒
+                        n.Get(src)->AddApplication(analysisApp);
+                        analysisApp->SetStartTime(Seconds(1.0));
+                        analysisApp->SetStopTime(Seconds(simulator_stop_time));
+                        
+                        */
+                        AnalysisClientHelper clientHelper(interfaces.GetAddress(1), 200);
+                        clientHelper.SetAttribute ("Interval", TimeValue(Seconds (1.0)));
+		        ApplicationContainer apps = clientHelper.Install(n.Get(src));
+		        apps.Start(Seconds(1.0)); 
+		        apps.Stop(Seconds(simulator_stop_time)); 
 
+		        
+	        }
+	}
+	// TODO:安装分析服务器
+	/*
+	uint32_t dst = node_num-1;
+        Ptr<AnalysisServer> analysisApp = CreateObject<AnalysisServer>();
+        analysisApp->SetLocal(interfaces.GetAddress(dst), 200); // 绑定到分析器节点的IP和端口
+        n.Get(dst)->AddApplication(analysisApp);
+        analysisApp->SetStartTime(Seconds(1.0));
+        analysisApp->SetStopTime(Seconds(simulator_stop_time));
+        */
+        AnalysisServerHelper serverHelper(200);
+	ApplicationContainer apps = serverHelper.Install(n.Get(node_num-1));
+	apps.Start(Seconds(0.9)); 
+	apps.Stop(Seconds(simulator_stop_time)); 
+
+        
 	nic_rate = get_nic_rate(n);
 
 	// config switch
@@ -853,7 +919,8 @@ int main(int argc, char *argv[])
 			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n.Get(i));
 			uint32_t shift = 3; // by default 1/8
 			for (uint32_t j = 1; j < sw->GetNDevices(); j++){
-				Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(j));
+			        Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(j));
+			        if(dev == 0) continue; // 如果是p2p，就跳过
 				// set ecn
 				uint64_t rate = dev->GetDataRate().GetBitRate();
 				NS_ASSERT_MSG(rate2kmin.find(rate) != rate2kmin.end(), "must set kmin for each link speed"); // 若没有为rate设置kmin，则输出消息并终止程序
@@ -1041,6 +1108,7 @@ int main(int argc, char *argv[])
 
 	topof.close();
 	tracef.close();
+	
 
 	// schedule link down
 	if (link_down_time > 0){
