@@ -127,7 +127,12 @@ void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 }
 
 void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
-
+/*
+	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
+	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
+		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向外广播，发送PFC Pause 包。0表示pause。
+	}
+*/
 	//RDMA NPA : signal packet parse 信号数据包解析.通常用于 通知 或 触发 某些事件。通知其他设备发生了拥塞、链路故障或其他重要事件,通知源设备降低发送速率等。
 	if (ch.l3Prot == 0xFB){
 		FlowIdTag t;

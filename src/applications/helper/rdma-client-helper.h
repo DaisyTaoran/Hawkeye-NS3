@@ -28,6 +28,27 @@
 #include "ns3/rdma-client.h"
 
 namespace ns3 {
+/*
+class RdmaServerHelper
+{
+
+public:
+  RdmaServerHelper ();
+
+  RdmaServerHelper (uint16_t pg, uint16_t port);
+
+  void SetAttribute (std::string name, const AttributeValue &value);
+
+  ApplicationContainer Install (NodeContainer c);
+  
+  Ptr<AnalysisServer> GetServer (void);
+
+private:
+  ObjectFactory m_factory;
+  
+  Ptr<AnalysisServer> m_server;
+};
+*/
 
 /**
  * \brief Create a client application which does RDMA write
