@@ -817,13 +817,13 @@ int main(int argc, char *argv[])
 		NetDeviceContainer d = qbb.Install(snode, dnode);               // 在 snode 和 dnode 之间安装网络设备和信道，并返回设备容器 d
 		if (snode->GetNodeType() == 0){                                 // 如果源节点是服务器（host），则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = snode->GetObject<Ipv4>();
-			ipv4->AddInterface(d.Get(0));
-			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000)));
+			uint32_t in = ipv4->AddInterface(d.Get(0));                           // 在ipv4-l3-click-protocol.cc中
+			ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
 		}
 		if (dnode->GetNodeType() == 0){                                 // 如果目的节点是服务器（host），则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
-			ipv4->AddInterface(d.Get(1));
-			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
+			uint32_t in = ipv4->AddInterface(d.Get(1));
+			ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
 		}
 
 		// used to create a graph of the topology 将链路的索引、状态、延迟和带宽等信息记录到 nbr2if 中。
@@ -863,51 +863,36 @@ int main(int argc, char *argv[])
 		        
                         // 安装网络设备
 		        NetDeviceContainer d = p2p.Install(snode, dnode);
-		        // 安装协议栈;
+		        // 安装ip;
 		        if (dnode->GetNodeType() == 0){                                 
 			        Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
-			        ipv4->AddInterface(d.Get(1));
-			        ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
+			        uint32_t in = ipv4->AddInterface(d.Get(1));
+			        ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
 		        }
-		        // 分配 IPv 地址，用于建立节点之间的连通性。
+		        // 分配 IPv4 地址，用于建立节点之间的连通性。
 		        char ipstring[16];
 		        sprintf(ipstring, "10.%d.%d.0", (i+link_num) / 254 + 1, (i+link_num) % 254 + 1);
 		        ipv4.SetBase(ipstring, "255.255.255.0");
-		        interfaces = ipv4.Assign(d);
+		        interfaces = ipv4.Assign(d); // 返回容器 d 所有device对应的interface
 		        
 		        // 安装UDP客户端
 		        /*
                         
-                        Ptr<AnalysisClient> analysisApp = CreateObject<AnalysisClient>();
-                        analysisApp->SetAnalysisServer(interfaces.GetAddress(dst), 200);
-                        analysisApp->SetLocal(interfaces.GetAddress(src), 200); // 绑定到分析器节点的IP和端口
-                        analysisApp->SetSignalInterval(Seconds(1)); // 设置信号发送间隔为1秒
-                        n.Get(src)->AddApplication(analysisApp);
-                        analysisApp->SetStartTime(Seconds(1.0));
-                        analysisApp->SetStopTime(Seconds(simulator_stop_time));
-                        
-                        */
-                        AnalysisClientHelper clientHelper(interfaces.GetAddress(1), 200);
+                        AnalysisClientHelper clientHelper(interfaces.GetAddress(1), 200); // 绑定到分析服务器的IP和端口
                         clientHelper.SetAttribute ("Interval", TimeValue(Seconds (1.0)));
 		        ApplicationContainer apps = clientHelper.Install(n.Get(src));
-		        apps.Start(Seconds(1.0)); 
-		        apps.Stop(Seconds(simulator_stop_time)); 
+		        apps.Start(0); 
+		        apps.Stop(0); 
 
-		        
+		        */
 	        }
 	}
 	// TODO:安装分析服务器
-	/*
 	uint32_t dst = node_num-1;
-        Ptr<AnalysisServer> analysisApp = CreateObject<AnalysisServer>();
-        analysisApp->SetLocal(interfaces.GetAddress(dst), 200); // 绑定到分析器节点的IP和端口
-        n.Get(dst)->AddApplication(analysisApp);
-        analysisApp->SetStartTime(Seconds(1.0));
-        analysisApp->SetStopTime(Seconds(simulator_stop_time));
-        */
         AnalysisServerHelper serverHelper(200);
-	ApplicationContainer apps = serverHelper.Install(n.Get(node_num-1));
-	apps.Start(Seconds(0.9)); 
+	ApplicationContainer apps = serverHelper.Install(n.Get(dst));
+        serverHelper.SetNextHop(&nextHop);
+	apps.Start(Seconds(0)); 
 	apps.Stop(Seconds(simulator_stop_time)); 
 
         

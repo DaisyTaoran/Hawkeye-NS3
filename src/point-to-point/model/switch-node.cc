@@ -11,6 +11,7 @@
 #include "ppp-header.h"
 #include "ns3/int-header.h"
 #include <cmath>
+#include <sys/file.h>
 
 namespace ns3 {
 
@@ -140,6 +141,10 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		uint32_t inDev = t.GetFlowId();
 		for (uint32_t idx = 0; idx < pCnt; idx++){
 			if(m_portToPortBytes[inDev][idx] > rateThreshold ){ // 如果端inDev到端idx字节计数 > 速率阈值
+				
+				int fd_out = fileno(fp_telemetry);
+				flock(fd_out, LOCK_EX);
+				
 				if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){
 					DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 				}
@@ -157,22 +162,24 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 				fprintf(fp_telemetry, "%d\n", m_portTelemetryData[epoch][idx].pfcPausedPacketNum);
 
 				fprintf(fp_telemetry,"\n\nsignal\nflow telemetry data for port %d\n", idx);
-				fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+				//fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");				
+				fprintf(fp_telemetry, "flowIdx dstIp packetNum pfcPausedPacketNum\n");
 				for(int i = 0; i < flowEntryNum; i++){
 					if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 						fprintf(fp_telemetry, "%d ", i);
-						fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
+						//fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
 						fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstIp);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
 						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].packetNum);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
 						fprintf(fp_telemetry, "%d\n", m_flowTelemetryData[idx][epoch][i].pfcPausedPacketNum);
 					}
 				}
+				fprintf(fp_telemetry, "0 0 0 0\n");
 
 				epoch = (epoch + epochNum - 1) % epochNum; // 切换到上一个时间窗口
 				fprintf(fp_telemetry,"\n\nsignal\nlast epoch %d\n", epoch);
@@ -183,22 +190,27 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 				fprintf(fp_telemetry, "%d\n", m_portTelemetryData[epoch][idx].pfcPausedPacketNum);
 
 				fprintf(fp_telemetry,"\n\nsignal\nflow telemetry data for port %d\n", idx);
-				fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+				//fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");				
+				fprintf(fp_telemetry, "flowIdx dstIp packetNum pfcPausedPacketNum\n");
 				for(int i = 0; i < flowEntryNum; i++){
 					if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 						fprintf(fp_telemetry, "%d ", i);
-						fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
+						//fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
 						fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstIp);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
 						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].packetNum);
-						fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
+						//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
 						fprintf(fp_telemetry, "%d\n", m_flowTelemetryData[idx][epoch][i].pfcPausedPacketNum);
 					}
 				}
+				fprintf(fp_telemetry, "0 0 0 0\n");
+				
+				fflush(fp_telemetry);
+				flock(fd_out, LOCK_UN);
 
 			}
 		}
@@ -206,6 +218,10 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 	}
 	//RDMA NPA : polling packet parse 轮询包分析。收到轮询数据包后，HW把交换机上的遥测数据轮询到分析器。主动查询状态或信息，周期性（按固定时间间隔）
 	else if(ch.l3Prot == 0xFA){ // 如果是轮询包
+		
+		int fd_out = fileno(fp_telemetry);
+		flock(fd_out, LOCK_EX);
+	
 		FlowIdTag t;
 		p->PeekPacketTag(t);
 		uint32_t inDev = t.GetFlowId();
@@ -218,22 +234,24 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		fprintf(fp_telemetry,"\n\npolling\nepoch %d\n", epoch);
 		
 		fprintf(fp_telemetry,"\n\npolling\nflow telemetry data for port %d\n", idx);
-		fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+		//fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+		fprintf(fp_telemetry, "flowIdx dstIp packetNum pfcPausedPacketNum\n");
 		for(int i = 0; i < flowEntryNum; i++){	// 遍历流水平遥测数据的入口
 			if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 				fprintf(fp_telemetry, "%d ", i);
-				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
+				//fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
 				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstIp);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
 				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].packetNum);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
 				fprintf(fp_telemetry, "%d\n", m_flowTelemetryData[idx][epoch][i].pfcPausedPacketNum);
 			}
 		}
+		fprintf(fp_telemetry, "0 0 0 0\n");
 
 		fprintf(fp_telemetry,"\n\npolling\nport telemetry data for port %d\n", idx);
 		fprintf(fp_telemetry, "enqQdepth pfcPausedPacketNum\n");
@@ -245,27 +263,34 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		fprintf(fp_telemetry,"\n\npolling\nlast epoch %d\n", epoch);
 
 		fprintf(fp_telemetry,"\n\npolling\nflow telemetry data for port %d\n", idx);
-		fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+		//fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
+		fprintf(fp_telemetry, "flowIdx dstIp packetNum pfcPausedPacketNum\n");
 		for(int i = 0; i < flowEntryNum; i++){	// 换个时间戳，遍历流水平遥测数据的入口
 			if(m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp != 0){
 				fprintf(fp_telemetry, "%d ", i);
-				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
+				//fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcIp);
 				fprintf(fp_telemetry, "%08x ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstIp);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.srcPort);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.dstPort);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].flowTuple.protocol);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].minSeq);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].maxSeq);
 				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].packetNum);
-				fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
+				//fprintf(fp_telemetry, "%d ", m_flowTelemetryData[idx][epoch][i].enqQdepth);
 				fprintf(fp_telemetry, "%d\n", m_flowTelemetryData[idx][epoch][i].pfcPausedPacketNum);
 			}
 		}
+		fprintf(fp_telemetry, "0 0 0 0\n");
 
 		fprintf(fp_telemetry,"\n\npolling\nport telemetry data for port %d\n", idx);
 		fprintf(fp_telemetry, "enqQdepth pfcPausedPacketNum\n");
 		fprintf(fp_telemetry, "%d ", m_portTelemetryData[epoch][idx].enqQdepth);
 		fprintf(fp_telemetry, "%d\n", m_portTelemetryData[epoch][idx].pfcPausedPacketNum);
+		
+		
+		fflush(fp_telemetry);
+		flock(fd_out, LOCK_UN);
+		
 	}
 
 	int idx = GetOutDev(p, ch);	// 根据目的ip等，返回下一跳出口的端口号

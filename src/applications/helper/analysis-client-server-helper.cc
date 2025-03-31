@@ -23,6 +23,12 @@ AnalysisServerHelper::SetAttribute (std::string name, const AttributeValue &valu
   	m_factory.Set (name, value);
 }
 
+
+void 
+AnalysisServerHelper::SetNextHop(std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>> > > *nexthop){
+	m_server->SetNextHop(nexthop);
+}
+
 ApplicationContainer
 AnalysisServerHelper::Install (NodeContainer c)
 {
