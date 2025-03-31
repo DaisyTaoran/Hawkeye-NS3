@@ -20,6 +20,7 @@ public:
   AnalysisServerHelper (uint16_t port);
 
   void SetAttribute (std::string name, const AttributeValue &value);
+  void SetNextHop(std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>> > > *nexthop);
 
   ApplicationContainer Install (NodeContainer c);
   Ptr<AnalysisServer> GetServer (void);

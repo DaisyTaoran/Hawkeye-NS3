@@ -30,6 +30,7 @@ def build(bld):
                 'model/analysis-server.cc',
                 'model/analysis-client.cc',
                 'helper/analysis-client-server-helper.cc',
+                'model/find-root-cal.cc',
         ]
 
     applications_test = bld.create_ns3_module_test_library('applications')
@@ -67,6 +68,7 @@ def build(bld):
                 'model/analysis-server.h',
                 'model/analysis-client.h',
                 'helper/analysis-client-server-helper.h',
+                'model/find-root-cal.h',
         ]
 
     bld.ns3_python_bindings()

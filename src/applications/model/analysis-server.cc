@@ -1,4 +1,7 @@
 
+#include <dirent.h>
+#include <string.h>
+
 #include "ns3/log.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/nstime.h"
@@ -10,6 +13,8 @@
 #include "ns3/uinteger.h"
 #include "packet-loss-counter.h"
 #include "analysis-server.h"
+#include "find-root-cal.h"
+
 
 namespace ns3 {
 
@@ -32,6 +37,11 @@ TypeId AnalysisServer::GetTypeId (void)
                    MakeUintegerAccessor (&AnalysisServer::GetPacketWindowSize,
                                          &AnalysisServer::SetPacketWindowSize),
                    MakeUintegerChecker<uint16_t> (8,256))
+        .AddAttribute ("Interval",
+                   	"The time to wait between read file", 
+                   	TimeValue (Seconds (1.0)),
+                   	MakeTimeAccessor (&AnalysisServer::m_readInterval),
+                   	MakeTimeChecker ())
     	;
     	return tid;
 }
@@ -73,6 +83,11 @@ void AnalysisServer::SetLocal (Ipv4Address ip, uint16_t port)
   	m_port = port;
 }
 
+void AnalysisServer::SetNextHop(std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>> > > *nexth)
+{
+	nextHop = nexth;
+}
+
 void AnalysisServer::DoDispose (void) 
 {
   	NS_LOG_FUNCTION(this);
@@ -94,6 +109,8 @@ void AnalysisServer::StartApplication()
 
     	// 设置接收回调
     	m_socket->SetRecvCallback(MakeCallback(&AnalysisServer::HandleRead, this));
+    	
+    	ScheduleNextRead();
 }
 
 void AnalysisServer::StopApplication() 
@@ -135,6 +152,41 @@ void AnalysisServer::HandleRead(Ptr<Socket> socket)
         
     	}
     
+}
+
+void AnalysisServer::ScheduleNextRead(){
+	m_readEvent = Simulator::Schedule(m_readInterval, &AnalysisServer::ReadFile, this);
+}
+
+void AnalysisServer::ReadFile(){
+
+	NS_LOG_FUNCTION(this);
+	
+	Time currentTime = Simulator::Now();
+	double s = currentTime.GetSeconds();
+	printf("\n\nTime is %f sec, Analysis server read files.\n", s);
+	
+	// 找 mix 文件夹下所有 telemetry_*.txt文件
+	DIR* dir = opendir("./mix");
+	std::vector<std::string> fileNames;
+	struct dirent* ptr;
+	while((ptr = readdir(dir)) != NULL)
+	{	
+		if(strncmp(ptr->d_name, "telemetry_", 10) == 0){
+			fileNames.push_back("mix/"+std::string(ptr->d_name));
+			//printf("%s\n", ptr->d_name);
+		}
+	}
+	closedir(dir);
+	// 读取文件内容
+    	FindRootCal f;
+    	f.SetNextHop(nextHop);
+	f.ReadAllFiles(fileNames);
+    	f.PrintNodeFlow();
+	
+    
+	ScheduleNextRead();
+	printf("\nEnd this analysis.\n");
 }
 
 
