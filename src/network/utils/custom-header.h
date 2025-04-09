@@ -124,7 +124,7 @@ public:
 		  uint16_t pg;
 		  uint32_t seq; // the qbb sequence number.
 		  IntHeader ih;
-	  } ack;
+	  } ack;// l3Port = 0xFC
 	  // PauseHeader
 	  struct {
 		  uint32_t time;

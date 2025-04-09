@@ -86,10 +86,12 @@ protected:
 
 private:
 	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);				// 根据目的ip等，返回下一跳出口的端口号
+	int GetOutDevToAnalysis();
 	void SendToDev(Ptr<Packet>p, CustomHeader &ch);					// 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值。
 	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				// 尝试设置暂停状态，并广播发送pfc Pause包。
 	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			// 尝试取消暂停状态，并广播发送pfc Resume包。
+	void SendSignalToAnalysis();
 	// RDMA NPA
 	static uint32_t FiveTupleHash(const FiveTuple &fiveTuple);
 	static uint32_t GetEpochIdx();
@@ -111,6 +113,8 @@ public:
 
 	// for RDMA NPA detect
 	FILE *fp_telemetry = NULL;	// 文件名为telemetry_x.txt，其中x=node_number，在third.cc中有定义
+	
+	Ipv4Address m_analysis_addr;
 };
 
 } /* namespace ns3 */

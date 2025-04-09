@@ -130,6 +130,7 @@ public:
   // RDMA NPA
   bool GetEgressPaused(uint32_t qIndex);
   void SendSignal(uint32_t qIndex, uint32_t rate, uint32_t epoch, uint32_t congestionPort, bool pfcOff);
+  void SendAnalysis(uint32_t qIndex, uint32_t rate, uint32_t epoch, Ipv4Address dst_addr);
 
 	TracedCallback<Ptr<const Packet>, uint32_t> m_traceEnqueue;
 	TracedCallback<Ptr<const Packet>, uint32_t> m_traceDequeue;

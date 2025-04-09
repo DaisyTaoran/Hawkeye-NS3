@@ -8,6 +8,7 @@
 #include <string.h>
 #include <cstring>
 #include <sys/file.h>
+#include <algorithm>
 
 #include "find-root-cal.h"
 
@@ -15,7 +16,7 @@
 namespace ns3{
 
 void FindRootCal::PrintNodeFlow(){
-	printf("fprintf all node result in mix/find_root_cal.txt\n");
+	if(PRINT_EN) printf("\nfprintf all node result in mix/find_root_cal.txt\n");
     
     	FILE *fout = fopen("mix/find_root_cal.txt", "w");
     	flock(fileno(fout), LOCK_EX);
@@ -48,7 +49,6 @@ int FindRootCal::GetVertexIdx(int nodeid, int portid){
     VertexNode v;
     v.nodeIdx = nodeid; v.portIdx = portid;
     vexList.push_back(v);
-    //printf("Add Vertex %d %d\n", nodeid, portid);
     
     return i;
 }
@@ -86,8 +86,6 @@ int FindRootCal::GetEdge(int srcnode, int srcport, int dstnode, int dstport){
     e.dstVex = dst;
     vexList[src].edges.push_back(e);
 
-    
-    //printf("Add Edge %d %d\t to %d %d\n",srcnode, srcport, dstnode, dstport);
     return i;
 }
 
@@ -98,7 +96,8 @@ void FindRootCal::AddFlow(int srcvex, int dstvex, int flownum){
     	vexList[dstvex].flowWeight += flownum;
     	vexList[srcvex].flowWeight -= flownum;
     	
-    	printf("AddFlow: %d.%d to %d.%d %d\n", 
+    	if(PRINT_EN)
+    		printf("AddFlow: %d.%d to %d.%d %d\n", 
     		vexList[srcvex].nodeIdx, vexList[srcvex].portIdx, vexList[dstvex].nodeIdx, vexList[dstvex].portIdx, flownum);
 }
 
@@ -111,24 +110,37 @@ void FindRootCal::AddFlow(int srcnode, int srcport, int dstnode, int dstport, in
     vexList[dst].flowWeight += flownum;
     vexList[src].flowWeight -= flownum;
     
-    printf("AddFlow: %d.%d to %d.%d %d\n", srcnode, srcport, dstnode, dstport, flownum);
+    if(PRINT_EN)
+    	printf("AddFlow: %d.%d to %d.%d %d\n", srcnode, srcport, dstnode, dstport, flownum);
 }
 
-int FindRootCal::CalFlowCont(int node){ // 计算telemetry_node.txt的流争用,return vexIdx------------
-
-	printf("Add flow contention:\n");
+int FindRootCal::CalFlowCont(int node){ // 计算telemetry_node.txt的流争用,return vexIdx
+	
+    	if(PRINT_EN)
+		printf("Add flow contention:\n");
 	
 	int size;
 	int iport, oport;
 	uint32_t flowIdx, dstIp, packetNum, pfcPausedPacketNum;
 	char *line = NULL;
 	size_t len = 0;
-
+	// 打开文件，并上共享锁
 	char telemetry_path[100];
 	sprintf(telemetry_path, "mix/telemetry_%d.txt", node);    
 	FILE *fin = fopen(telemetry_path, "r");
 	flock(fileno(fin), LOCK_SH);
 	
+	// 找到文件上次读取的位置
+	if(lastPos.find(node) != lastPos.end()) 
+	 	fseek(fin, lastPos[node], SEEK_SET);
+	if(getline(&line, &len, fin) == -1) { 	
+		flock(fileno(fin), LOCK_UN);
+		fclose(fin);
+		free(line);
+		return -1;
+	}
+	
+	// 跳过开头没用的数据
 	size = 2;
 	do{
 		getline(&line, &len, fin);
@@ -152,7 +164,7 @@ int FindRootCal::CalFlowCont(int node){ // 计算telemetry_node.txt的流争用,
 			AddFlow(node, iport, -1, flowIdx, packetNum);
 		}
 	}
-	// 消磨
+	// 跳过后面没用的数据
 	size = 3;
 	do{
 		getline(&line, &len, fin);
@@ -164,6 +176,8 @@ int FindRootCal::CalFlowCont(int node){ // 计算telemetry_node.txt的流争用,
 		fscanf(fin, "%d %08x %d %d\n", &flowIdx, &dstIp, &packetNum, &pfcPausedPacketNum);
 		if(dstIp == 0) break;
 	}
+	
+	lastPos[node] = ftell(fin); // 记录本次的位置
 	
 	flock(fileno(fin), LOCK_UN);
 	fclose(fin);
@@ -187,13 +201,16 @@ int FindRootCal::GetRootNode(){ // flowWeight最大的点，就是罪魁祸首
 
 void FindRootCal::AddFlowInNode(int vexIdx){
 	
-	printf("\nAdd flow from Vertex %d.%d to next node:\n", vexList[vexIdx].nodeIdx, vexList[vexIdx].portIdx);
+	int num = vexList[vexIdx].nextnode.size();
 	
-	int size = vexList[vexIdx].nextnode.size();
-	for(int i = 0; i < size; i++){
-		// get nextnode[i] and pfcPauseNum[i]
-		
-		// find next that vexList[next].nodeIdx = nextnode[i]
+    	if(PRINT_EN)
+		printf("Add flow from Vertex %d.%d to next node: %d pause flow can be add.\n",
+			 		vexList[vexIdx].nodeIdx, vexList[vexIdx].portIdx, num);
+	if(num == 0) return;
+	
+	for(int i = 0; i < num; i++){
+		// get pair (nextnode[i], pfcPauseNum[i])
+		// find next that vexList[next].nodeIdx == nextnode[i]
 	    	int next = 0;
 	    	int size = vexList.size();
 	    	int nextnode = vexList[vexIdx].nextnode[i];
@@ -203,22 +220,31 @@ void FindRootCal::AddFlowInNode(int vexIdx){
 		// if not find: cal flow contention in telemetry_nextnode.txt	
 		if(next == size){
 			next = CalFlowCont(nextnode);
-			printf("End flow contention\n");
+			if(PRINT_EN) printf("End flow contention\n");
 		}
 		// if has find: vexList[vexIdx] ---pfcPauseNum---> vexList[next]
-		AddFlow(vexIdx, next, vexList[vexIdx].pfcPauseNum[i]);	
+		if(next != -1) {
+			AddFlow(vexIdx, next, vexList[vexIdx].pfcPauseNum[i]);
+			vexList[vexIdx].nextnode[i] = -1;
+			vexList[vexIdx].pfcPauseNum[i] = -1;
+		}
 	}
-	vexList[vexIdx].nextnode.clear();
-	vexList[vexIdx].pfcPauseNum.clear();
+	
+	auto it1 = std::remove(vexList[vexIdx].nextnode.begin(), vexList[vexIdx].nextnode.end(), -1);
+	vexList[vexIdx].nextnode.erase(it1, vexList[vexIdx].nextnode.end());
+	auto it2 = std::remove(vexList[vexIdx].pfcPauseNum.begin(), vexList[vexIdx].pfcPauseNum.end(), -1);
+	vexList[vexIdx].pfcPauseNum.erase(it2, vexList[vexIdx].pfcPauseNum.end());
 	
 	return;
 }
 
 void FindRootCal::ReadAllFiles(std::vector<std::string> fileNames){
 	int size = fileNames.size();
-	printf("Read %d files List as follow:\n", size);
-	for(int i = 0; i < size; i++)
-		printf("%s\n", fileNames[i].c_str());
+	if(PRINT_EN) {
+		printf("Read %d files List as follow:\n", size);
+		for(int i = 0; i < size; i++)
+			printf("%s\n", fileNames[i].c_str());
+	}
 	
 	// 算出所有 flow to currNode
 	for(int i = 0; i < size; i++){ 
@@ -226,16 +252,42 @@ void FindRootCal::ReadAllFiles(std::vector<std::string> fileNames){
 	}
 	
 	// 算出所有 Node to nextNode + 流争用
+	printf("\n");
 	size = vexList.size();
 	for(int i = 0; i < size; i++){
 		if(vexList[i].nodeIdx == -1) continue;
 		AddFlowInNode(i);
 	}
-	// 
+	
+	// 结果写入find_root_cal.txt文件
+	PrintNodeFlow();
+}
+
+
+void FindRootCal::ReadOneFile(uint32_t node){
+	
+	// 算出所有 flow to currNode
+	std::string filename = "mix/telemetry_" + std::to_string(node) + ".txt";
+	ReadFileForPause(filename);
+	
+	// 算出所有 Node to nextNode + 流争用
+	printf("\n");
+	int size = vexList.size();
+	for(int i = 0; i < size; i++){
+		if(vexList[i].nodeIdx == -1) continue;
+		AddFlowInNode(i);
+	}
+	
+	// 结果写入find_root_cal.txt文件
+	PrintNodeFlow();
+	
+	return;
 }
 
 void FindRootCal::ReadFileForPause(std::string &filename){
-	printf("\nReadfile:%s\n", filename.c_str());
+	
+    	if(PRINT_EN) printf("\nReadfile:%s\n", filename.c_str());
+    	
 	uint32_t node, res, size;
 	char* line;
 	size_t len = 0;
@@ -252,16 +304,24 @@ void FindRootCal::ReadFileForPause(std::string &filename){
         	return;
 	}
 	
+	/* 找到上次的位置 */
+	 if(lastPos.find(node) != lastPos.end())
+	 	fseek(fin, lastPos[node], SEEK_SET);
+	 
+	
 	ssize_t ret = getline(&line, &len, fin);
-	if(ret == -1) printf("文件读取失败\n");
+	// if(PRINT_EN && ret == -1) printf("文件读取失败\n");
 	while(ret != -1){
 		if(strcmp(line, "polling\n") == 0){ //---
 			ReadPolling(node);
-			printf("End polling\n");
+    			//if(PRINT_EN) printf("End polling\n");
 		} else if(strcmp(line, "signal\n") == 0){
 			ReadSignal(node);
-			printf("End signal\n");
+			//if(PRINT_EN) printf("End signal\n");
 		}
+		/* 记录本次的位置 */
+		lastPos[node] = ftell(fin);
+		
 		ret = getline(&line, &len, fin);
 	}
 		
@@ -269,7 +329,7 @@ void FindRootCal::ReadFileForPause(std::string &filename){
 	fclose(fin);
 	
 	free(line);
-	printf("End ReadFile:%s\n", filename.c_str());
+	if(PRINT_EN) printf("End ReadFile:%s\n", filename.c_str());
 	
 	return;
 }
@@ -288,8 +348,6 @@ int FindRootCal::GetNextHop(uint32_t node, uint32_t dstnode){
 }
 
 void FindRootCal::ReadPolling(uint32_t node){
-
-	printf("ReadPolling: node %d\n", node);
 	
 	uint32_t port, size, dstnode;
 	uint32_t flowIdx, dstIp, packetNum, pfcPausedPacketNum;
@@ -314,7 +372,7 @@ void FindRootCal::ReadPolling(uint32_t node){
 					
 		}
 	}
-	// 消磨
+	// 跳过后面没用的数据
 	size = 4;
 	do{
 		getline(&line, &len, fin);
@@ -327,14 +385,10 @@ void FindRootCal::ReadPolling(uint32_t node){
 	
 	free(line);
 	
-	//printf("End Flow Read in node %d\n", node);
-	
 	return;
 }
     	
 void FindRootCal::ReadSignal(uint32_t node){
-
-	printf("ReadSignal: node %d\n", node);
 	
 	uint32_t port, size;
 	uint32_t flowIdx, dstIp, packetNum, pfcPausedPacketNum;
@@ -361,17 +415,20 @@ void FindRootCal::ReadSignal(uint32_t node){
 					
 		}
 	}
-	// 消磨
+	// 跳过后面没用的数据
 	size = 3;
 	do{
 		getline(&line, &len, fin);
 		if(strcmp(line, "signal\n") == 0) size--;
 	}while(size > 0);
-	fscanf(fin, "flow telemetry data for port %d\n", &port);
 	getline(&line, &len, fin);
-	while(true){
+	//fscanf(fin, "flow telemetry data for port %d\n", &port);
+	getline(&line, &len, fin);
+	while(true){/*
 		fscanf(fin, "%d %08x %d %d\n", &flowIdx, &dstIp, &packetNum, &pfcPausedPacketNum);
-		if(dstIp == 0) break;
+		if(dstIp == 0) break;*/
+		getline(&line, &len, fin);
+		if(strcmp(line, "0 0 0 0\n") == 0) break;
 	}
 	
 	free(line);

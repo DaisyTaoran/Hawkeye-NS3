@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include "pint.h"
 
+#include <ns3/find-root-cal.h>
+
 namespace ns3 {
 
 struct RdmaInterfaceMgr{
@@ -61,6 +63,7 @@ public:
 	int ReceiveUdp(Ptr<Packet> p, CustomHeader &ch);
 	int ReceiveCnp(Ptr<Packet> p, CustomHeader &ch); // 用于处理接收到的CNP（Congestion Notification Packet，拥塞通知包）
 	int ReceiveAck(Ptr<Packet> p, CustomHeader &ch); // handle both ACK and NACK 检测到性能下降后，设置轮询包。即实现agent功能
+	int ReceiveSignal(Ptr<Packet> p, CustomHeader &ch);
 	int Receive(Ptr<Packet> p, CustomHeader &ch); // callback function that the QbbNetDevice should use when receive packets. Only NIC can call this function. And do not call this upon PFC
 
 	void CheckandSendQCN(Ptr<RdmaRxQueuePair> q);
@@ -153,6 +156,11 @@ public:
 
 	//RDMA NPA
 	bool m_agent_flag;
+	
+	// Analysis node
+	bool m_analysis_flag;
+	Ptr<FindRootCal> analys_app = NULL;
+	std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>> > > *nextHop = NULL;
 };
 
 } /* namespace ns3 */

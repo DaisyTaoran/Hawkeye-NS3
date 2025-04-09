@@ -473,6 +473,24 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 	return 0;
 }
 
+int RdmaHw::ReceiveSignal(Ptr<Packet> p, CustomHeader &ch){
+	if(!m_analysis_flag)
+		return 0;
+	if(ch.signal.congestionPort){
+		
+		printf("\n========== RdmaHw in analyser receive analysis signal, from node %d, time = %f ==========\n", 
+			ch.sip, Simulator::Now().GetSeconds());
+		
+		fflush(stdout);
+		
+		if(analys_app == NULL) analys_app = CreateObject<FindRootCal>();
+		analys_app->SetNextHop(nextHop);
+		analys_app->ReadOneFile(ch.sip);
+		
+	}
+	return 0;
+}
+
 int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
 	if (ch.l3Prot == 0x11){ // UDP
 		ReceiveUdp(p, ch);
@@ -482,6 +500,8 @@ int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
 		ReceiveAck(p, ch);
 	}else if (ch.l3Prot == 0xFC){ // ACK
 		ReceiveAck(p, ch);
+	}else if (ch.l3Prot == 0xFB){ // Signal
+		ReceiveSignal(p, ch);
 	}
 	return 0;
 }

@@ -259,15 +259,15 @@ namespace ns3 {
 	{
 		NS_LOG_FUNCTION(this);
 		if (!m_linkUp) return; // if link is down, return
-		if (m_txMachineState == BUSY) return;	// Quit if channel busy
+		if (m_txMachineState == BUSY) return;	// Quit if channel busy, can't deal with new trans
 		Ptr<Packet> p;
 		if (m_node->GetNodeType() == 0){
 			int qIndex = m_rdmaEQ->GetNextQindex(m_paused);
 			if (qIndex != -1024){
 				if (qIndex == -1){ // high prio
-					p = m_rdmaEQ->DequeueQindex(qIndex);
+					p = m_rdmaEQ->DequeueQindex(qIndex); // get p from vector<packet>
 					m_traceDequeue(p, 0);
-					TransmitStart(p);
+					TransmitStart(p); // 通过qbbChannel发到dstDev,使得调用dst-dev::Receive(p)
 					return;
 				}
 				// a qp dequeue a packet
@@ -448,6 +448,35 @@ namespace ns3 {
 		ch.signal.epochID = epoch;
 		ch.signal.flowRate = rate;
 		ch.signal.pfcOff = pfcOff;
+		ch.signal.lastTimeStep = (uint32_t)(Simulator::Now().GetTimeStep() >> 5);
+		uint16_t temp;
+		ProcessHeader(p, temp);
+		p->RemoveHeader(ipv4h);
+		p->AddHeader(ch);
+		SwitchSend(0, p, ch);
+	}
+	
+	void QbbNetDevice::SendAnalysis(uint32_t qIndex, uint32_t rate, uint32_t epoch, Ipv4Address dst_addr){
+		Ptr<Packet> p = Create<Packet>(0);
+                // 将IPv4头部添加到数据包中。
+		Ipv4Header ipv4h;  // Prepare IPv4 header
+		ipv4h.SetProtocol(0xFB);
+		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal());
+		ipv4h.SetDestination(dst_addr);
+		ipv4h.SetPayloadSize(9);	//TODO : signal size
+		ipv4h.SetTtl(1);
+		ipv4h.SetIdentification(UniformVariable(0, 65536).GetValue());
+		p->AddHeader(ipv4h);
+		AddHeader(p, 0x800);
+                // 从队列0处发送数据包p，并传递自定义头部ch
+		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
+		p->PeekHeader(ch);
+		ch.sip = m_node->GetId();
+		ch.headerType |= CustomHeader::L4_Header;
+		//ch.signal.congestionPort = 7;
+		ch.signal.epochID = epoch;
+		ch.signal.flowRate = rate;
+		//ch.signal.pfcOff = 1;
 		ch.signal.lastTimeStep = (uint32_t)(Simulator::Now().GetTimeStep() >> 5);
 		uint16_t temp;
 		ProcessHeader(p, temp);

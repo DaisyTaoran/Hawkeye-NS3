@@ -32,21 +32,24 @@ struct VertexNode {// 顶点
         } 
 };   
 
-class FindRootCal{   // 可以识别根本原因（例如流争用）、PFC传播路径和受害流。 
+class FindRootCal : public Object{   // 可以识别根本原因（例如流争用）、PFC传播路径和受害流。 
 public:
+	bool PRINT_EN = true;	// =true时，执行这个class时打印信息到屏幕上
+	
     	FindRootCal(){}
-    	void PrintNodeFlow();
     	void SetNextHop(std::map< Ptr<Node>, std::map< Ptr<Node>, std::vector<Ptr<Node>> > > *nexth);
-    	void ReadAllFiles(std::vector<std::string> fileNames);
+    	void ReadAllFiles(std::vector<std::string> fileNames); 	// read all file and refresh the topo in txt
+    	void ReadOneFile(uint32_t node);			// read one file and refresh the topo in txt
     
 private:
 	FILE *fin;
 	int rootNodeIdx;
 	std::vector<int> nodesIdx;
     	std::vector<VertexNode> vexList; 
-    	//int **nexthop;
     	std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>>> > *nexthop;
+    	std::map<int, long> lastPos;
     
+    	void PrintNodeFlow();
     	int GetRootNode();//--------------
     	int GetVertexIdx(int nodeid, int portid);
     	int GetEdge(int srcvex, int dstvex);
@@ -58,7 +61,7 @@ private:
     	void ReadPolling(uint32_t node);
     	void ReadSignal(uint32_t node);
     	void ReadFileForPause(std::string &filename);
-    	int CalFlowCont(int node); // 根据算出来的pause root node，计算流争用,return vexIdx-----------------
+    	int CalFlowCont(int node);
 };
 
 };
