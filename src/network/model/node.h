@@ -71,7 +71,7 @@ public:
    * This unique id happens to be also the index of the Node into
    * the NodeList. 
    */
-  uint32_t GetId (void) const;
+  uint32_t GetId (void) const; // 返回node所属序列号
 
   /**
    * \returns the system id for parallel simulations associated

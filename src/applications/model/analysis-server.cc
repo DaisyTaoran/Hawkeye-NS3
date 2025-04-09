@@ -182,11 +182,11 @@ void AnalysisServer::ReadFile(){
     	FindRootCal f;
     	f.SetNextHop(nextHop);
 	f.ReadAllFiles(fileNames);
-    	f.PrintNodeFlow();
+    	//f.PrintNodeFlow();
 	
     
 	ScheduleNextRead();
-	printf("\nEnd this analysis.\n");
+	//printf("\nEnd this analysis.\n");
 }
 
 

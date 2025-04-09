@@ -7,7 +7,7 @@
 * This program is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
+]
 *
 * You should have received a copy of the GNU General Public License
 * along with this program; if not, write to the Free Software
@@ -119,6 +119,7 @@ map<Ptr<Node>, map<Ptr<Node>, uint64_t> > pairBdp;
 map<uint32_t, map<uint32_t, uint64_t> > pairRtt;
 
 std::vector<Ipv4Address> serverAddress;
+uint32_t analysis_node;
 
 // maintain port number for each host pair
 std::unordered_map<uint32_t, unordered_map<uint32_t, uint16_t> > portNumder;
@@ -286,6 +287,7 @@ void SetRoutingEntries(){ // 设置路由表条目。根据全局的下一跳信
 	// For each node. 遍历 nextHop 中的所有节点
 	for (auto i = nextHop.begin(); i != nextHop.end(); i++){ 
 		Ptr<Node> node = i->first;      // 当前节点叫 node。
+		if(node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() == serverAddress[analysis_node]) continue;
 		auto &table = i->second;        // table 是 node 的路由表，存储了从 node 到各个目标节点的下一跳信息。
 		for (auto j = table.begin(); j != table.end(); j++){ // 遍历 table 中的所有目标节点。
 			// The destination node.
@@ -731,6 +733,7 @@ int main(int argc, char *argv[])
 
 	//n.Create(node_num);
 	node_num++; // TODO:+1表示额外的分析服务器，类型是Node
+	analysis_node = node_num-1;
 	std::vector<uint32_t> node_type(node_num, 0); 
 	for (uint32_t i = 0; i < switch_num; i++)
 	{
@@ -807,7 +810,7 @@ int main(int argc, char *argv[])
 		{
 			qbb.SetDeviceAttribute("ReceiveErrorModel", PointerValue(rem)); // 将错误模型附加到网络设备上
 		}
-
+		
 		fflush(stdout); // 确保数据立即写入stdout，而不是缓存在内存中。
 
 		// Assigne server IP
@@ -815,12 +818,12 @@ int main(int argc, char *argv[])
 		// because we want our IP to be the primary IP (first in the IP address list),
 		// so that the global routing is based on our IP
 		NetDeviceContainer d = qbb.Install(snode, dnode);               // 在 snode 和 dnode 之间安装网络设备和信道，并返回设备容器 d
-		if (snode->GetNodeType() == 0){                                 // 如果源节点是服务器（host），则为其分配预定义的 IP 地址。
+		if (snode->GetNodeType() == 0){                                 // 如果源节点是 host，则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = snode->GetObject<Ipv4>();
 			uint32_t in = ipv4->AddInterface(d.Get(0));                           // 在ipv4-l3-click-protocol.cc中
 			ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
-		}
-		if (dnode->GetNodeType() == 0){                                 // 如果目的节点是服务器（host），则为其分配预定义的 IP 地址。
+		} // 确保手动分配的IP成为接口的主IP地址（即IP地址列表中的第一个），不会被自动分配的IP覆盖（ipv4.Assign()）
+		if (dnode->GetNodeType() == 0){                                 // 如果目的节点是 host，则为其分配预定义的 IP 地址。
 			Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
 			uint32_t in = ipv4->AddInterface(d.Get(1));
 			ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
@@ -847,54 +850,63 @@ int main(int argc, char *argv[])
 		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1)))); // pfc.txt
 	}
 	
-	// TODO:为所有交换机和分析服务器n[node_num-1]建立链路
+	// TODO:在所有交换机和分析服务器n[analysis_node]间，建立链路
 	Ipv4InterfaceContainer interfaces;
-        PointToPointHelper p2p;
 	for (uint32_t i = 0; i < node_num; i++){
-	        if (node_type[i] == 1){ // 如果是switch，就为它和分析器建立链路
-	                uint32_t src = i, dst = node_num-1;
-		        std::string data_rate = "100Gbps", link_delay = "0.001ms";
-		        Ptr<Node> snode = n.Get(src), dnode = n.Get(dst);               
-                        // 设置点到点链路
-		        p2p.SetDeviceAttribute("DataRate", StringValue(data_rate));     
-		        p2p.SetChannelAttribute("Delay", StringValue(link_delay));     
+                Ptr<Node> snode = n.Get(i), dnode = n.Get(analysis_node);
+	        if (snode->GetNodeType() == 1){ // 如果是switch，就为它和分析器建立链路
+	                uint32_t src = i, dst = analysis_node;
+                        // 设置点到点链路 
+		        qbb.SetDeviceAttribute("DataRate", StringValue("100Gbps"));    
+		        qbb.SetChannelAttribute("Delay", StringValue("0.001ms"));     
 		        
 		        fflush(stdout);
 		        
                         // 安装网络设备
-		        NetDeviceContainer d = p2p.Install(snode, dnode);
-		        // 安装ip;
-		        if (dnode->GetNodeType() == 0){                                 
+		        NetDeviceContainer d = qbb.Install(snode, dnode);
+		        if (snode->GetNodeType() == 0){                                 
+			        Ptr<Ipv4> ipv4 = snode->GetObject<Ipv4>();
+			        uint32_t in = ipv4->AddInterface(d.Get(0));                           
+			        ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000)));
+		        }if (dnode->GetNodeType() == 0){                                 
 			        Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
 			        uint32_t in = ipv4->AddInterface(d.Get(1));
-			        ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000))); // 原来参数是 1 而非 in
+			        ipv4->AddAddress(in, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
 		        }
+		        // used to create a graph of the topology
+		        nbr2if[snode][dnode].idx = DynamicCast<QbbNetDevice>(d.Get(0))->GetIfIndex();
+		        nbr2if[snode][dnode].up = true;
+		        nbr2if[snode][dnode].delay = DynamicCast<QbbChannel>(DynamicCast<QbbNetDevice>(d.Get(0))->GetChannel())->GetDelay().GetTimeStep();
+		        nbr2if[snode][dnode].bw = DynamicCast<QbbNetDevice>(d.Get(0))->GetDataRate().GetBitRate();
+		        nbr2if[dnode][snode].idx = DynamicCast<QbbNetDevice>(d.Get(1))->GetIfIndex();
+		        nbr2if[dnode][snode].up = true;
+		        nbr2if[dnode][snode].delay = DynamicCast<QbbChannel>(DynamicCast<QbbNetDevice>(d.Get(1))->GetChannel())->GetDelay().GetTimeStep();
+		        nbr2if[dnode][snode].bw = DynamicCast<QbbNetDevice>(d.Get(1))->GetDataRate().GetBitRate();
+		
 		        // 分配 IPv4 地址，用于建立节点之间的连通性。
 		        char ipstring[16];
 		        sprintf(ipstring, "10.%d.%d.0", (i+link_num) / 254 + 1, (i+link_num) % 254 + 1);
 		        ipv4.SetBase(ipstring, "255.255.255.0");
-		        interfaces = ipv4.Assign(d); // 返回容器 d 所有device对应的interface
+		        interfaces = ipv4.Assign(d);
 		        
 		        // 安装UDP客户端
 		        /*
-                        
                         AnalysisClientHelper clientHelper(interfaces.GetAddress(1), 200); // 绑定到分析服务器的IP和端口
                         clientHelper.SetAttribute ("Interval", TimeValue(Seconds (1.0)));
 		        ApplicationContainer apps = clientHelper.Install(n.Get(src));
 		        apps.Start(0); 
 		        apps.Stop(0); 
-
 		        */
 	        }
 	}
 	// TODO:安装分析服务器
-	uint32_t dst = node_num-1;
+	/*
         AnalysisServerHelper serverHelper(200);
-	ApplicationContainer apps = serverHelper.Install(n.Get(dst));
+	ApplicationContainer apps = serverHelper.Install(n.Get(analysis_node));
         serverHelper.SetNextHop(&nextHop);
 	apps.Start(Seconds(0)); 
 	apps.Stop(Seconds(simulator_stop_time)); 
-
+        */
         
 	nic_rate = get_nic_rate(n);
 
@@ -902,6 +914,7 @@ int main(int argc, char *argv[])
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 1){ // is switch
 			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n.Get(i));
+			sw->m_analysis_addr = serverAddress[analysis_node];// TODO
 			uint32_t shift = 3; // by default 1/8
 			for (uint32_t j = 1; j < sw->GetNDevices(); j++){
 			        Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(j));
@@ -942,7 +955,8 @@ int main(int argc, char *argv[])
 	// install RDMA driver
 	//
 	for (uint32_t i = 0; i < node_num; i++){
-		if (n.Get(i)->GetNodeType() == 0){ // is server, not switch
+		// TODO:若节点dst是attacker，那么设置dst不进行拥塞控制
+		if (n.Get(i)->GetNodeType() == 0){ // is host, not switch
 			// create RdmaHw
 			Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();
 			rdmaHw->SetAttribute("ClampTargetRate", BooleanValue(clamp_target_rate));
@@ -974,6 +988,13 @@ int main(int argc, char *argv[])
 				rdmaHw->m_agent_flag = true;
 			else                                         // 不是agent_node
 				rdmaHw->m_agent_flag = false;
+			// TODO: Set analysis node. 设置分析服务器。
+			if(i == node_num-1){
+			        rdmaHw->m_analysis_flag = true;
+			        rdmaHw->nextHop = &nextHop;
+			}else{
+			        rdmaHw->m_analysis_flag = false;
+			}
 			if(no_cc_nodes.find(i) != no_cc_nodes.end())
 				rdmaHw->SetAttribute("CcMode", UintegerValue(0));
 			// create and install RdmaDriver

@@ -112,6 +112,27 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下�
 	return nexthops[idx];
 }
 
+int SwitchNode::GetOutDevToAnalysis(){
+	auto entry = m_rtTable.find(m_analysis_addr.Get());
+	
+	if (entry == m_rtTable.end())		// 在路由表中，此目的ip没有对应的下一跳出口vector
+		return -1;
+		
+	auto &nexthops = entry->second;
+	
+	uint32_t sport = 200, dport = 200;
+	union {
+		uint8_t u8[4+4+2+2];		// [][][][] [][][][] [][][][]
+		uint32_t u32[3];		// u32[2]   ch.dip   ch.sip
+	} buf;
+	buf.u32[0] = GetObject<Ipv4>()->GetAddress(1, 0).GetLocal().Get();// sip
+	buf.u32[1] = m_analysis_addr.Get();// dip
+	buf.u32[2] = sport | (dport << 16);
+	
+	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();	// 根据源和目的ip、port进行hash，找到vector中的一个数 
+	return nexthops[0];//TODO:error
+}
+
 void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向外发pause并把此队列设为pause。
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
 	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
@@ -127,7 +148,16 @@ void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 	}
 }
 
-void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+void SwitchNode::SendSignalToAnalysis(){
+	// Get idx
+	int idx = GetOutDevToAnalysis();
+	// Create and Send p to analysis server
+	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[idx]);// TODO
+	device->SendAnalysis(0, 0, GetEpochIdx(), m_analysis_addr);
+	
+}
+
+void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 /*
 	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
 	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
@@ -142,14 +172,17 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		for (uint32_t idx = 0; idx < pCnt; idx++){
 			if(m_portToPortBytes[inDev][idx] > rateThreshold ){ // 如果端inDev到端idx字节计数 > 速率阈值
 				
+				//printf("switch %d open telemetry to write...", GetId());fflush(stdout);
 				int fd_out = fileno(fp_telemetry);
 				flock(fd_out, LOCK_EX);
+				//printf(" successly open.\n");fflush(stdout);
 				
 				if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){
 					DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 				}
 				int epoch = GetEpochIdx();
-				fprintf(fp_telemetry,"\n\nsignal\nepoch %d\n", epoch);
+				double timeInSeconds = Simulator::Now().GetSeconds();
+				fprintf(fp_telemetry,"\n\nsignal\nepoch %d nowTime %fs\n", epoch, timeInSeconds);
 
 
 				fprintf(fp_telemetry,"\n\nsignal\ntraffic meter form port %d to port %d\n", inDev, idx);
@@ -211,6 +244,8 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 				
 				fflush(fp_telemetry);
 				flock(fd_out, LOCK_UN);
+				
+				SendSignalToAnalysis();// TODO
 
 			}
 		}
@@ -218,9 +253,10 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 	}
 	//RDMA NPA : polling packet parse 轮询包分析。收到轮询数据包后，HW把交换机上的遥测数据轮询到分析器。主动查询状态或信息，周期性（按固定时间间隔）
 	else if(ch.l3Prot == 0xFA){ // 如果是轮询包
-		
+		//printf("switch %d open telemetry to write...", GetId());fflush(stdout);
 		int fd_out = fileno(fp_telemetry);
 		flock(fd_out, LOCK_EX);
+		//printf(" successly open.\n");fflush(stdout);
 	
 		FlowIdTag t;
 		p->PeekPacketTag(t);
@@ -230,8 +266,8 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 			DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 		}
 		int epoch = GetEpochIdx();	// 当前时间窗口
-
-		fprintf(fp_telemetry,"\n\npolling\nepoch %d\n", epoch);
+		double timeInSeconds = Simulator::Now().GetSeconds();
+		fprintf(fp_telemetry,"\n\npolling\nepoch %d nowTime %fs\n", epoch, timeInSeconds);
 		
 		fprintf(fp_telemetry,"\n\npolling\nflow telemetry data for port %d\n", idx);
 		//fprintf(fp_telemetry, "flowIdx srcIp dstIp srcPort dstPort protocol minSeq maxSeq packetNum enqQdepth pfcPausedPacketNum\n");
@@ -290,6 +326,8 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从队列中取�
 		
 		fflush(fp_telemetry);
 		flock(fd_out, LOCK_UN);
+		
+		SendSignalToAnalysis();// TODO
 		
 	}
 
