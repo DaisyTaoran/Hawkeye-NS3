@@ -86,7 +86,8 @@ void CustomHeader::Print (std::ostream &os) const{
 uint32_t CustomHeader::GetSerializedSize (void) const{
 	uint32_t len = 0;
 	if (headerType & L2_Header)
-		len += 14;
+		//len += 14; // TODO:ver1 + ver2
+		len += 2;  // TODO:ver3
 	if (headerType & L3_Header)
 		len += 5*4;
 	if (headerType & L4_Header){
@@ -112,10 +113,24 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
   
   // ppp
   if (headerType & L2_Header){
-	  i.WriteHtonU16(pppProto);
-	  // skip 12 Bytes, so total 14 bytes as Ethernet
-	  i.WriteU64(0); // 8 bytes
-	  i.WriteU32(0); // 4 byets
+        /* ver 1 
+	i.WriteHtonU16(pppProto);
+	// skip 12 Bytes, so total 14 bytes as Ethernet
+	i.WriteU64(0); // 8 bytes
+	i.WriteU32(0); // 4 byets
+       	*/
+	/*TODO: ver 2 
+        i.WriteU8(0x7e);
+        i.WriteU8(0xff);
+        i.WriteU8(0x03);
+        i.WriteHtonU16 (pppProto);
+        i.WriteU64(0);
+        i.WriteU8(0);
+	*/
+	
+	/* TODO:ver 3 */
+	i.WriteHtonU16(pppProto);
+	
   }
 
   // IPv4
@@ -163,8 +178,19 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		  i.WriteHtonU16 (udp.payload_size);
 		  i.WriteHtonU16 (0);
 		  // SeqTsHeader
-		  i.WriteHtonU32 (udp.seq);
-		  i.WriteHtonU16 (udp.pg);
+		  if(udp.dport == 4791) {
+		        i.WriteU16 (0);
+		        i.WriteU16 (0xffff);
+		        i.WriteU16 (0);
+		        i.WriteHtonU16 (udp.pg);
+		        i.WriteHtonU32 (udp.seq);
+		  /**/} else {
+		        i.WriteU32 (0);
+		        i.WriteHtonU32 (udp.seq);
+		        i.WriteU16 (0);
+		        i.WriteHtonU16 (udp.pg);
+		        
+		  }
 		  udp.ih.Serialize(i);
 	  }else if (l3Prot == 0xFF){ // CNP
 		  i.WriteU8(cnp.qIndex);
@@ -202,9 +228,22 @@ CustomHeader::Deserialize (Buffer::Iterator start)
   // L2
   int l2Size = 0;
   if (headerType & L2_Header){
+          /* ver 1 
 	  pppProto = i.ReadNtohU16();
 	  i.Next(12);
 	  l2Size = 14;
+	  */
+	  /*TODO: ver 2
+	  i.Next(3);
+          pppProto = i.ReadNtohU16 ();
+          i.Next(9);
+          l2Size = 14;
+	  */
+	  
+	  /*TODO: ver 3 */
+	  pppProto = i.ReadNtohU16();
+	  l2Size = 2;
+	  
   }
 
   // L3
@@ -302,12 +341,21 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 		  }
 
 		  // SeqTsHeader
-		  udp.seq = i.ReadNtohU32 ();
-		  udp.pg =  i.ReadNtohU16 ();
+		  if(udp.dport == 4791) {
+		        i.ReadNtohU16 ();
+		        i.ReadNtohU32 ();
+		        udp.pg =  i.ReadNtohU16 ();
+		        udp.seq = i.ReadNtohU32 ();
+		        //isRdma = true;
+		  /**/} else {
+		        i.ReadU32 ();//new
+		        udp.seq = i.ReadNtohU32 ();
+		        i.ReadU16 ();//new
+		        udp.pg =  i.ReadNtohU16 ();
+		  }
 		  if (getInt)
 			  udp.ih.Deserialize(i);
-
-		  l4Size = GetUdpHeaderSize();
+		  l4Size = GetUdpHeaderSize ();
 	  }else if (l3Prot == 0xFF){
 		  cnp.qIndex = i.ReadU8();
 		  cnp.fid = i.ReadU16();
@@ -355,7 +403,8 @@ uint32_t CustomHeader::GetAckSerializedSize(void){
 }
 
 uint32_t CustomHeader::GetUdpHeaderSize(void){
-	return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize();
+	//return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize();
+	return 8 + 12 + IntHeader::GetStaticSize();//new
 }
 
 uint32_t CustomHeader::GetStaticWholeHeaderSize(void){

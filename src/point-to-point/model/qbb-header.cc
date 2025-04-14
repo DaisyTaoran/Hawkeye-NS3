@@ -96,11 +96,11 @@ namespace ns3 {
 	}
 	uint32_t qbbHeader::GetSerializedSize(void)  const
 	{
-		return GetBaseSize() + IntHeader::GetStaticSize();
+		return GetBaseSize() + IntHeader::GetStaticSize(); // 10 Bytes + sizeof(IntHeader)
 	}
 	uint32_t qbbHeader::GetBaseSize() {
 		qbbHeader tmp;
-		return sizeof(tmp.sport) + sizeof(tmp.dport) + sizeof(tmp.flags) + sizeof(tmp.m_pg) + sizeof(tmp.m_seq);
+		return sizeof(tmp.sport) + sizeof(tmp.dport) + sizeof(tmp.flags) + sizeof(tmp.m_pg) + sizeof(tmp.m_seq); //  10 Bytes
 	}
 	void qbbHeader::Serialize(Buffer::Iterator start)  const
 	{

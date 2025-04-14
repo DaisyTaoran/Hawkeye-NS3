@@ -92,27 +92,50 @@ SeqTsHeader::GetSerializedSize (void) const
 {
 	return GetHeaderSize();
 }
-uint32_t SeqTsHeader::GetHeaderSize(void){
-	return 6 + IntHeader::GetStaticSize();
+uint32_t SeqTsHeader::GetHeaderSize(void){ // static
+	return 12 + IntHeader::GetStaticSize();
 }
 
 void
 SeqTsHeader::Serialize (Buffer::Iterator start) const
-{
+{ 
   Buffer::Iterator i = start;
-  i.WriteHtonU32 (m_seq);
-  i.WriteHtonU16 (m_pg);
-
-  // write IntHeader
-  ih.Serialize(i);
+  /* 改 */
+  if(isRdma){   
+        i.WriteU8(0); 		// Opcode: 0 = SEND First
+	i.WriteU8(0);
+	i.WriteU16(0xffff);     // Partition Key
+	i.WriteU16(0); 		// reserved = 8b. this 16b is reversed(8) + m_pg(8)
+	i.WriteHtonU16(m_pg); 	// m_pg(24b) = 8b + 16b, 8b in reserved
+	i.WriteHtonU32(m_seq);	// A(1b) + Reserves(7b) + PSNSep(24b) = 32b
+  } else {      
+        /* 原 */
+        i.WriteU32 (0); // new add
+        i.WriteHtonU32 (m_seq);
+        i.WriteU16(0); // new
+        i.WriteHtonU16 (m_pg);
+  }
+        // write IntHeader
+        ih.Serialize(i);
 }
 uint32_t
 SeqTsHeader::Deserialize (Buffer::Iterator start)
 {
   Buffer::Iterator i = start;
-  m_seq = i.ReadNtohU32 ();
-  m_pg =  i.ReadNtohU16 ();
-
+  /* 改 */
+  if(isRdma){   
+	i.ReadU16();
+	i.ReadU32();
+	m_pg = i.ReadNtohU16();
+	m_seq = i.ReadNtohU32();
+  } else {      
+        /* 原 */
+	i.ReadU32();
+        m_seq = i.ReadNtohU32 ();
+	i.ReadU16();
+        m_pg =  i.ReadNtohU16 ();
+        
+  }
   // read IntHeader
   ih.Deserialize(i);
   return GetSerializedSize ();

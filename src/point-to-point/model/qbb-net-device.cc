@@ -368,7 +368,7 @@ namespace ns3 {
 		m_macRxTrace(packet);
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
 		ch.getInt = 1; // parse INT header
-		packet->PeekHeader(ch);
+		packet->PeekHeader(ch); // read but not remove header
 		if (ch.l3Prot == 0xFE){ // PFC
 			if (!m_qbbEnabled) return;
 			unsigned qIndex = ch.pfc.qIndex;
@@ -470,7 +470,7 @@ namespace ns3 {
 		AddHeader(p, 0x800);
                 // 从队列0处发送数据包p，并传递自定义头部ch
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
-		p->PeekHeader(ch);
+		p->PeekHeader(ch); // Deserialize ppp and ipv4 to ch
 		ch.sip = m_node->GetId();
 		ch.headerType |= CustomHeader::L4_Header;
 		//ch.signal.congestionPort = 7;
@@ -479,7 +479,7 @@ namespace ns3 {
 		//ch.signal.pfcOff = 1;
 		ch.signal.lastTimeStep = (uint32_t)(Simulator::Now().GetTimeStep() >> 5);
 		uint16_t temp;
-		ProcessHeader(p, temp);
+		ProcessHeader(p, temp);// remove ppp header and get eth(protocol)
 		p->RemoveHeader(ipv4h);
 		p->AddHeader(ch);
 		SwitchSend(0, p, ch);
