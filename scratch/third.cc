@@ -1073,9 +1073,11 @@ int main(int argc, char *argv[])
 	}
 
 	FILE *trace_output = fopen(trace_output_file.c_str(), "w");
-	if (enable_trace)
-		qbb.EnableTracing(trace_output, trace_nodes);           // 函数在 point-to-point/helper/qbb-helper.h 中,qbb是QbbHelper类，在trcae_output文件中输出跟踪信息
-
+	if (enable_trace){
+		//qbb.EnableTracing(trace_output, trace_nodes);           // 函数在 point-to-point/helper/qbb-helper.h 中,qbb是QbbHelper类，在trcae_output文件中输出跟踪信息
+              
+                qbb.EnablePcapAll("mixpcap/mypcap");
+        }
 	// dump link speed to trace file
 	{
 		SimSetting sim_setting;

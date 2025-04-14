@@ -245,7 +245,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 				fflush(fp_telemetry);
 				flock(fd_out, LOCK_UN);
 				
-				SendSignalToAnalysis();// TODO
+				SendSignalToAnalysis();// TODO:发Signal信号给分析器node
 
 			}
 		}

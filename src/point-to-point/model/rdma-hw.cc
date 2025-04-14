@@ -2,7 +2,6 @@
 #include <ns3/seq-ts-header.h>
 #include <ns3/udp-header.h>
 #include <ns3/ipv4-header.h>
-#include "ns3/ppp-header.h"
 #include "ns3/boolean.h"
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
@@ -12,6 +11,7 @@
 #include "ppp-header.h"
 #include "qbb-header.h"
 #include "cn-header.h"
+#include "bth-header.h"
 
 namespace ns3{
 
@@ -607,13 +607,22 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 		payload_size = m_mtu;
 	Ptr<Packet> p = Create<Packet> (payload_size);
 	// add SeqTsHeader
+	/**/
 	SeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);
 	seqTs.SetPG (qp->m_pg);
+	if(qp->dport == 4791) seqTs.isRdma = true;
 	p->AddHeader (seqTs);
+	/* TODO:add BTHeader
+	bthHeader bhead;
+	bhead.SetSeq (qp->snd_nxt);
+	bhead.SetKey (0xffff);
+	bhead.SetPG (qp->m_pg);
+	p->AddHeader (bhead);
+	*/
 	// add udp header
 	UdpHeader udpHeader;
-	udpHeader.SetDestinationPort (qp->dport);
+	udpHeader.SetDestinationPort (qp->dport);  // 4791->RoCEv2
 	udpHeader.SetSourcePort (qp->sport);
 	p->AddHeader (udpHeader);
 	// add ipv4 header

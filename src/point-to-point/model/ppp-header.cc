@@ -78,22 +78,53 @@ PppHeader::GetSerializedSize (void) const
 	return GetStaticSize();
 }
 uint32_t PppHeader::GetStaticSize (void){
-	return 14;
+        // ver1 + ver2
+	//return 14;
+	
+	// ver3
+	return 2;
 }
 
 void
 PppHeader::Serialize (Buffer::Iterator start) const
-{
+{ /* ver 1 
   start.WriteHtonU16 (m_protocol);
   start.WriteU64(0);
   start.WriteU32(0);
+  */
+  /* ver 2
+  Buffer::Iterator i = start;
+  i.WriteU8(0x7e);
+  i.WriteU8(0xff);
+  i.WriteU8(0x03);
+  i.WriteHtonU16 (m_protocol);
+  i.WriteU64(0);
+  i.WriteU8(0);
+  */
+  /* ver3 */
+  start.WriteHtonU16 (m_protocol);
+  
 }
 
 uint32_t
 PppHeader::Deserialize (Buffer::Iterator start)
-{
+{ /* ver 1 
   m_protocol = start.ReadNtohU16 ();
   start.Next(12);
+  */
+  /* ver 2
+  Buffer::Iterator i = start;
+  int8_t m_flag = i.ReadU8();
+  uint8_t m_addr = i.ReadU8();
+  uint8_t m_control = i.ReadU8();
+  m_protocol = i.ReadNtohU16 ();
+  i.Next(9);
+  */
+  //printf("Deserialize m_flag=%02x, m_addr=%02x, m_control=%02x, m_protocol=%04x\n", m_flag, m_addr, m_control, m_protocol);
+  
+  /* ver 3 */
+  m_protocol = start.ReadNtohU16 ();
+  
   return GetSerializedSize ();
 }
 

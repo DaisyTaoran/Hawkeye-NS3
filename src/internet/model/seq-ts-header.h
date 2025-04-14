@@ -66,7 +66,8 @@ private:
   uint32_t m_seq;
   uint16_t m_pg;
 public:
-  IntHeader ih;
+  bool isRdma = false;
+  IntHeader ih; // 支持带内网络遥测（INT）的自定义协议头部，用于在数据包中嵌入网络设备的实时状态信息
 };
 
 } // namespace ns3

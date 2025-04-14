@@ -30,6 +30,7 @@
 #include "ns3/boolean.h"
 #include "ns3/udp-header.h"
 #include "ns3/tcp-header.h"
+#include "ns3/bth-header.h"
 #include "ns3/seq-ts-header.h"
 #include "ns3/node.h"
 #include "ipv4-global-routing.h"
@@ -168,15 +169,16 @@ Ipv4GlobalRouting::GetTupleValue (const Ipv4Header &header, Ptr<const Packet> ip
 				UdpHeader udpHeader;
 				Ptr<Packet> p = ipPayload->Copy();
 				p->RemoveHeader(udpHeader);
+				//ipPayload->PeekHeader (udpHeader);
 				SeqTsHeader seqh;
 				p->RemoveHeader(seqh);
-				//ipPayload->PeekHeader (udpHeader);
 				NS_LOG_DEBUG ("Found UDP proto and header: " << 
 					udpHeader.GetSourcePort () << ":" <<  
 					udpHeader.GetDestinationPort ());
 				tupleValue ^= (udpHeader.GetSourcePort ()<<16);
 				tupleValue ^= udpHeader.GetDestinationPort ();
 				tupleValue ^= seqh.GetPG();
+				
 				break;
 			}
 		case TCP_PROT_NUMBER:
@@ -190,6 +192,7 @@ Ipv4GlobalRouting::GetTupleValue (const Ipv4Header &header, Ptr<const Packet> ip
 				tupleValue ^= tcpHeader.GetDestinationPort ();
 				break;
 			}
+		
 		default:
 			{
 				NS_LOG_DEBUG ("Udp or Tcp header not found");
