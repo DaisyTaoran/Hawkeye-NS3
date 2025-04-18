@@ -26,11 +26,13 @@ def build(bld):
         'helper/udp-echo-helper.cc',
         'helper/v4ping-helper.cc',
 		'model/rdma-client.cc',
-		'helper/rdma-client-helper.cc',
+		'model/myrdma-client.cc',
                 'model/analysis-server.cc',
                 'model/analysis-client.cc',
-                'helper/analysis-client-server-helper.cc',
                 'model/find-root-cal.cc',
+		'helper/rdma-client-helper.cc',
+		'helper/myrdma-client-helper.cc',
+                'helper/analysis-client-server-helper.cc',
         ]
 
     applications_test = bld.create_ns3_module_test_library('applications')
@@ -64,11 +66,13 @@ def build(bld):
         'helper/udp-echo-helper.h',
         'helper/v4ping-helper.h',
 		'model/rdma-client.h',
-		'helper/rdma-client-helper.h',
+		'model/myrdma-client.h',
                 'model/analysis-server.h',
                 'model/analysis-client.h',
-                'helper/analysis-client-server-helper.h',
                 'model/find-root-cal.h',
+		'helper/rdma-client-helper.h',
+		'helper/myrdma-client-helper.h',
+                'helper/analysis-client-server-helper.h',
         ]
 
     bld.ns3_python_bindings()

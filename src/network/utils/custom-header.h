@@ -23,6 +23,8 @@
 
 #include "ns3/header.h"
 #include "ns3/int-header.h"
+#include "mac48-address.h"
+#include "address-utils.h"
 
 namespace ns3 {
 /**
@@ -65,11 +67,16 @@ public:
   enum HeaderType{
 	L2_Header = 1,
 	L3_Header = 2,
-	L4_Header = 4
+	L4_Header = 4,
   };
 
   // ppp header
   uint16_t pppProto;
+  
+  // Eth header
+  uint16_t eth_lengthType;
+  Mac48Address eth_source;       
+  Mac48Address eth_destination;   
 
   // IPv4 header
   enum FlagsE {

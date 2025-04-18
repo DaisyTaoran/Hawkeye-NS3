@@ -34,6 +34,8 @@ CustomHeader::CustomHeader ()
 	getInt(1),
 	// ppp header
 	pppProto (0),
+	// eth header
+	eth_lengthType (0x0800),
 	// IPv4 header
     m_payloadSize (0),
     ipid (0),
@@ -51,6 +53,8 @@ CustomHeader::CustomHeader (uint32_t _headerType)
 	getInt(1),
 	// ppp header
 	pppProto (0),
+	// eth header
+	eth_lengthType (0x0800),
 	// IPv4 header
     m_payloadSize (0),
     ipid (0),
@@ -86,8 +90,8 @@ void CustomHeader::Print (std::ostream &os) const{
 uint32_t CustomHeader::GetSerializedSize (void) const{
 	uint32_t len = 0;
 	if (headerType & L2_Header)
-		//len += 14; // TODO:ver1 + ver2
-		len += 2;  // TODO:ver3
+		//len += 2;  // ppp size
+		len += 14;       // eth size
 	if (headerType & L3_Header)
 		len += 5*4;
 	if (headerType & L4_Header){
@@ -113,27 +117,17 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
   
   // ppp
   if (headerType & L2_Header){
-        /* ver 1 
+	
+	/* ppp header 
 	i.WriteHtonU16(pppProto);
-	// skip 12 Bytes, so total 14 bytes as Ethernet
-	i.WriteU64(0); // 8 bytes
-	i.WriteU32(0); // 4 byets
-       	*/
-	/*TODO: ver 2 
-        i.WriteU8(0x7e);
-        i.WriteU8(0xff);
-        i.WriteU8(0x03);
-        i.WriteHtonU16 (pppProto);
-        i.WriteU64(0);
-        i.WriteU8(0);
 	*/
-	
-	/* TODO:ver 3 */
-	i.WriteHtonU16(pppProto);
-	
+	/* eth header */
+	WriteTo (i, eth_destination);
+        WriteTo (i, eth_source);
+        i.WriteHtonU16 (eth_lengthType);
   }
 
-  // IPv4
+  // L3:IPv4
   if (headerType & L3_Header){
 	  uint8_t verIhl = (4 << 4) | (5);
 	  i.WriteU8 (verIhl);
@@ -171,7 +165,7 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		  uint32_t optionLen = (tcp.length - 5) * 4;
 		  if (optionLen <= 32)
 			  i.Write(tcp.optionBuf, optionLen);
-	  }else if (l3Prot == 0x11){ // UDP
+	  }else if (l3Prot == 0x11){ // UDP+BTH
 		  // udp header
 		  i.WriteHtonU16 (udp.sport);
 		  i.WriteHtonU16 (udp.dport);
@@ -192,12 +186,28 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		        
 		  }
 		  udp.ih.Serialize(i);
-	  }else if (l3Prot == 0xFF){ // CNP
+	  }else if (l3Prot == 0xFF){ // CNP=UDP+BTH(op=0x81,psn=0,pkey=ecnPacket)
+	  /**/
 		  i.WriteU8(cnp.qIndex);
 		  i.WriteU16(cnp.fid);
 		  i.WriteU8(cnp.ecnBits);
 		  i.WriteU16(cnp.qfb);
 		  i.WriteU16(cnp.total);
+		  /*
+		  // udp header
+		  i.WriteHtonU16 (udp.sport);
+		  i.WriteHtonU16 (udp.dport);
+		  i.WriteHtonU16 (udp.payload_size);
+		  i.WriteHtonU16 (0);
+		  // SeqTsHeader(BTHHeader.CNP)
+		        i.WriteU8 (0x81);
+		        i.WriteU8 (0);
+		        i.WriteU16 (0xffff);
+		        i.WriteU16 (0);
+		        i.WriteHtonU16 (cnp.qIndex);
+		        i.WriteHtonU32 (0); // ack=0, res=0000000, psn=0x0(24b)
+		  */
+		  udp.ih.Serialize(i);
 	  }else if (l3Prot == 0xFC || l3Prot == 0xFD){ // ACK or NACK
 		  i.WriteU16(ack.sport);
 		  i.WriteU16(ack.dport);
@@ -218,6 +228,7 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		i.WriteU32(polling.seq);
 	  }
   }
+  
 }
 
 uint32_t
@@ -228,22 +239,14 @@ CustomHeader::Deserialize (Buffer::Iterator start)
   // L2
   int l2Size = 0;
   if (headerType & L2_Header){
-          /* ver 1 
-	  pppProto = i.ReadNtohU16();
-	  i.Next(12);
-	  l2Size = 14;
-	  */
-	  /*TODO: ver 2
-	  i.Next(3);
-          pppProto = i.ReadNtohU16 ();
-          i.Next(9);
-          l2Size = 14;
-	  */
-	  
-	  /*TODO: ver 3 */
+	  /*  ppp header 
 	  pppProto = i.ReadNtohU16();
 	  l2Size = 2;
-	  
+	  */
+	ReadFrom (i, eth_destination);
+        ReadFrom (i, eth_source);
+        eth_lengthType = i.ReadNtohU16 ();
+        l2Size = 14;
   }
 
   // L3
@@ -298,7 +301,7 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 	  }
   }
 
-  // TCP
+  // TCP+UDP
   int l4Size = 0;
   if (headerType & L4_Header){
 	  if (l3Prot == 0x6){ // TCP
@@ -356,12 +359,26 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 		  if (getInt)
 			  udp.ih.Deserialize(i);
 		  l4Size = GetUdpHeaderSize ();
-	  }else if (l3Prot == 0xFF){
+	  }else if (l3Prot == 0xFF){ // CNP
 		  cnp.qIndex = i.ReadU8();
 		  cnp.fid = i.ReadU16();
 		  cnp.ecnBits = i.ReadU8();
 		  cnp.qfb = i.ReadU16();
 		  cnp.total = i.ReadU16();
+		  /*
+		  // udp header
+		  i.WriteHtonU16 (udp.sport);
+		  i.WriteHtonU16 (udp.dport);
+		  i.WriteHtonU16 (udp.payload_size);
+		  i.WriteHtonU16 (0);
+		  // SeqTsHeader(BTHHeader.CNP)
+		        i.WriteU8 (0x81);
+		        i.WriteU8 (0);
+		        i.WriteU16 (0xffff);
+		        i.WriteU16 (0);
+		        i.WriteHtonU16 (udp.pg);
+		        i.WriteHtonU32 (0); // ack=0, res=0000000, psn=0x0(24b)
+		  */
 		  l4Size = 8;
 	  }else if (l3Prot == 0xFC || l3Prot == 0xFD){ // ACK or NACK
 		  ack.sport = i.ReadU16();

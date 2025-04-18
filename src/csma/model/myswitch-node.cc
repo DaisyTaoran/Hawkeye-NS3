@@ -6,45 +6,45 @@
 #include "ns3/boolean.h"
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
-#include "switch-node.h"
-#include "qbb-net-device.h"
-#include "ppp-header.h"
+#include "myswitch-node.h"
+#include "mycsma-net-device.h"
+#include "ns3/ethernet-header.h"
 #include "ns3/int-header.h"
 #include <cmath>
 #include <sys/file.h>
 
 namespace ns3 {
 
-TypeId SwitchNode::GetTypeId (void)
+TypeId MySwitchNode::GetTypeId (void)
 {
-  static TypeId tid = TypeId ("ns3::SwitchNode")
+  static TypeId tid = TypeId ("ns3::MySwitchNode")
     .SetParent<Node> ()
-    .AddConstructor<SwitchNode> ()
+    .AddConstructor<MySwitchNode> ()
 	.AddAttribute("EcnEnabled",
 			"Enable ECN marking.",
 			BooleanValue(false),
-			MakeBooleanAccessor(&SwitchNode::m_ecnEnabled),
+			MakeBooleanAccessor(&MySwitchNode::m_ecnEnabled),
 			MakeBooleanChecker())
 	.AddAttribute("CcMode",
 			"CC mode.",
 			UintegerValue(0),
-			MakeUintegerAccessor(&SwitchNode::m_ccMode),
+			MakeUintegerAccessor(&MySwitchNode::m_ccMode),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("AckHighPrio",
 			"Set high priority for ACK/NACK or not",
 			UintegerValue(0),
-			MakeUintegerAccessor(&SwitchNode::m_ackHighPrio),
+			MakeUintegerAccessor(&MySwitchNode::m_ackHighPrio),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("MaxRtt",
 			"Max Rtt of the network",
 			UintegerValue(9000),
-			MakeUintegerAccessor(&SwitchNode::m_maxRtt),
+			MakeUintegerAccessor(&MySwitchNode::m_maxRtt),
 			MakeUintegerChecker<uint32_t>())
   ;
   return tid;
 }
 
-SwitchNode::SwitchNode(){
+MySwitchNode::MySwitchNode(){
 	m_ecmpSeed = m_id;
 	m_node_type = 1;
 	m_mmu = CreateObject<SwitchMmu>();
@@ -83,7 +83,7 @@ SwitchNode::SwitchNode(){
 	m_lastSignalEpoch = 0;
 }
 
-int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下一跳出口
+int MySwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下一跳出口
 	// look up entries
 	auto entry = m_rtTable.find(ch.dip);	// 在路由表中，根据目的ip找到下一跳的出口vector
 
@@ -112,7 +112,7 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){	// 找到下�
 	return nexthops[idx];
 }
 
-int SwitchNode::GetOutDevToAnalysis(){
+int MySwitchNode::GetOutDevToAnalysis(){
 	auto entry = m_rtTable.find(m_analysis_addr.Get());
 	
 	if (entry == m_rtTable.end())		// 在路由表中，此目的ip没有对应的下一跳出口vector
@@ -133,37 +133,32 @@ int SwitchNode::GetOutDevToAnalysis(){
 	return nexthops[0];//TODO:error
 }
 
-void SwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向外发pause并把此队列设为pause。
-	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
+void MySwitchNode::CheckAndSendPfc(uint32_t inDev, uint32_t qIndex){ // 若需发送pause，就把向外发pause并把此队列设为pause。
+	Ptr<MyCsmaNetDevice> device = DynamicCast<MyCsmaNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
 	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
 		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向外广播，发送PFC Pause 包。0表示pause。
 		m_mmu->SetPause(inDev, qIndex);			// 把此队列设置为pause状态。在src/point-to-point/model/switch-mmu.h文件中
 	}
 }
-void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
-	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);
+void MySwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
+	Ptr<MyCsmaNetDevice> device = DynamicCast<MyCsmaNetDevice>(m_devices[inDev]);
 	if (m_mmu->CheckShouldResume(inDev, qIndex)){	// 若此队列需要发pfc Resume包:
 		device->SendPfc(qIndex, 1);
 		m_mmu->SetResume(inDev, qIndex);		// 把此队列取消pause状态。
 	}
 }
 
-void SwitchNode::SendSignalToAnalysis(){
+void MySwitchNode::SendSignalToAnalysis(){
 	// Get idx
 	int idx = GetOutDevToAnalysis();
 	// Create and Send p to analysis server
-	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[idx]);// TODO
+	Ptr<MyCsmaNetDevice> device = DynamicCast<MyCsmaNetDevice>(m_devices[idx]);// TODO
 	device->SendAnalysis(0, 0, GetEpochIdx(), m_analysis_addr);
 	
 }
 
-void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
-/*
-	Ptr<QbbNetDevice> device = DynamicCast<QbbNetDevice>(m_devices[inDev]);	// 根据入口端口号，找到对应网卡
-	if (m_mmu->CheckShouldPause(inDev, qIndex)){	// 若此队列需要Pause:
-		device->SendPfc(qIndex, 0);			// 从此网卡的队列qIndex处向外广播，发送PFC Pause 包。0表示pause。
-	}
-*/
+void MySwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+
 	//RDMA NPA : signal packet parse 信号数据包解析.通常用于 通知 或 触发 某些事件。通知其他设备发生了拥塞、链路故障或其他重要事件,通知源设备降低发送速率等。
 	if (ch.l3Prot == 0xFB){
 		FlowIdTag t;
@@ -178,7 +173,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 				//printf(" successly open.\n");fflush(stdout);
 				
 				if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){
-					DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
+					DynamicCast<MyCsmaNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 				}
 				int epoch = GetEpochIdx();
 				double timeInSeconds = Simulator::Now().GetSeconds();
@@ -263,7 +258,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 		uint32_t inDev = t.GetFlowId();
 		int idx = GetOutDev(p, ch);	// 根据目的ip等，返回下一跳出口的端口号
 		if(m_portTelemetryData[GetEpochIdx()][idx].pfcPausedPacketNum > 0){	// 端口水平遥测数据的pfc pause包
-			DynamicCast<QbbNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
+			DynamicCast<MyCsmaNetDevice>(m_devices[idx])-> SendSignal(0, 0, 0, 0, 0);
 		}
 		int epoch = GetEpochIdx();	// 当前时间窗口
 		double timeInSeconds = Simulator::Now().GetSeconds();
@@ -392,7 +387,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 				}
 				entry.packetNum++; // 收到p后，条目的packedgeNum加一
 				entry.enqQdepth += m_mmu->ingress_queue_length[inDev][qIndex] - 1;
-				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
+				if(DynamicCast<MyCsmaNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
 					entry.pfcPausedPacketNum++;
 				}
 				entry.lastTimeStep = Simulator::Now().GetTimeStep();
@@ -402,7 +397,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 				entry.packetNum = 1;
 				entry.enqQdepth = m_mmu->ingress_queue_length[inDev][qIndex] - 1;
 				entry.pfcPausedPacketNum = 0;
-				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){ // 若此队列处于pause状态
+				if(DynamicCast<MyCsmaNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){ // 若此队列处于pause状态
 					entry.pfcPausedPacketNum++;
 				}
 				entry.lastTimeStep = Simulator::Now().GetTimeStep();
@@ -412,7 +407,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 			bool newPortEntry = Simulator::Now().GetTimeStep() - portEntry.lastTimeStep > epoch * (epochNum - 1); // (当前时间 - 上一次更新时间)更大，则需创建新条目
 			if (!newPortEntry){ // 无需新建条目
 				portEntry.enqQdepth += m_mmu->ingress_queue_length[inDev][qIndex] - 1;
-				if(DynamicCast<QbbNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
+				if(DynamicCast<MyCsmaNetDevice>(m_devices[idx])->GetEgressPaused(qIndex)){
 					portEntry.pfcPausedPacketNum++;
 				}
 				portEntry.lastTimeStep = Simulator::Now().GetTimeStep();
@@ -429,7 +424,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){ // 从接收队列�
 		return; // Drop
 }
 
-uint32_t SwitchNode::EcmpHash(const uint8_t* key, size_t len, uint32_t seed) {
+uint32_t MySwitchNode::EcmpHash(const uint8_t* key, size_t len, uint32_t seed) {
   uint32_t h = seed;
   if (len > 3) {
     const uint32_t* key_x4 = (const uint32_t*) key;
@@ -467,34 +462,34 @@ uint32_t SwitchNode::EcmpHash(const uint8_t* key, size_t len, uint32_t seed) {
   return h;
 }
 
-uint32_t SwitchNode::FiveTupleHash(const FiveTuple &fiveTuple){
+uint32_t MySwitchNode::FiveTupleHash(const FiveTuple &fiveTuple){
 	return EcmpHash((const uint8_t*)&fiveTuple, sizeof(fiveTuple), flowHashSeed) % flowEntryNum;
 }
 
-uint32_t SwitchNode::GetEpochIdx(){
+uint32_t MySwitchNode::GetEpochIdx(){
 	return Simulator::Now().GetTimeStep() / epoch % epochNum;
 }
 
-void SwitchNode::SetEcmpSeed(uint32_t seed){
+void MySwitchNode::SetEcmpSeed(uint32_t seed){
 	m_ecmpSeed = seed;
 }
 
-void SwitchNode::AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx){ // 在IP路由表的dstAddr.ip项中，加入一个值intf_idx
+void MySwitchNode::AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx){ // 在IP路由表的dstAddr.ip项中，加入一个值intf_idx
 	uint32_t dip = dstAddr.Get();
 	m_rtTable[dip].push_back(intf_idx); // 在IP路由表中dip对应的向量m_rtTable[dip]中加入intf_idx
 }
 
-void SwitchNode::ClearTable(){
+void MySwitchNode::ClearTable(){
 	m_rtTable.clear();
 }
 
 // This function can only be called in switch mode
-bool SwitchNode::SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch){ // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
+bool MySwitchNode::SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch){ // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
 	SendToDev(packet, ch); // 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据 
 	return true;
 }
 
-void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){ // 通知交换机，数据包p已经从队列中出队.被QbbNetDevice::DequeueAndTransmit调用
+void MySwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p){ // 通知交换机，数据包p已经从队列中出队.被MyCsmaNetDevice::DequeueAndTransmit调用
 	FlowIdTag t;
 	p->PeekPacketTag(t);
 	if (qIndex != 0){ // 非最高优先级
@@ -502,26 +497,27 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 		m_mmu->RemoveFromIngressAdmission(inDev, qIndex, p->GetSize());		// 从某入口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
 		m_mmu->RemoveFromEgressAdmission(ifIndex, qIndex, p->GetSize());	// 从某出口队列中处理掉数据包p，并更新相关的字节计数和队列状态。
 		m_bytes[inDev][ifIndex][qIndex] -= p->GetSize();
-		if (m_ecnEnabled){							// ECN 是一种网络拥塞控制机制，允许路由器在数据包中标记拥塞，而不是直接丢弃数据包。
+		if (m_ecnEnabled){							// ECN 拥塞控制机制，在数据包中标记拥塞，而不是直接丢弃数据包。
 			bool egressCongested = m_mmu->ShouldSendCN(ifIndex, qIndex);		// 检查出口队列是否拥塞。
 			if (egressCongested){							// 如果出口队列拥塞，就用ECN标记拥塞
-				PppHeader ppp;
+				EthernetHeader ethernet;
 				Ipv4Header h;
-				p->RemoveHeader(ppp);							// 从数据包 p 中移除 PPP 头（Point-to-Point Protocol）
-				p->RemoveHeader(h);							// 从数据包 p 中移除 IPv4 头
+				p->RemoveHeader(ethernet);							
+				p->RemoveHeader(h);							
 				h.SetEcn((Ipv4Header::EcnType)0x03);					// 设置 IPv4 头的 ECN 字段为 0x03，表示网络中存在拥塞。
-				p->AddHeader(h);							// 将修改后的 IPv4 头重新添加到数据包
-				p->AddHeader(ppp);							// 将 PPP 头重新添加到数据包
+				p->AddHeader(h);							
+				p->AddHeader(ethernet);							
 			}
 		}
 		//CheckAndSendPfc(inDev, qIndex);
-		CheckAndSendResume(inDev, qIndex);					// 尝试取消暂停状态，并发送pfc Resume包。
+		CheckAndSendResume(inDev, qIndex);					
 	}
 	if (1){
 		uint8_t* buf = p->GetBuffer();
-		if (buf[PppHeader::GetStaticSize() + 9] == 0x11){ // udp packet
-			IntHeader *ih = (IntHeader*)&buf[PppHeader::GetStaticSize() + 20 + 8 + 12]; // ppp, ip, udp, SeqTs(TODO:6->12), INT
-			Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(m_devices[ifIndex]);
+		EthernetHeader ether;
+		if (buf[ether.GetSerializedSize() + 9] == 0x11){ // udp packet
+			IntHeader *ih = (IntHeader*)&buf[ether.GetSerializedSize() + 20 + 8 + 12]; // ethernet, ip, udp, SeqTs(TODO:6->12)
+			Ptr<MyCsmaNetDevice> dev = DynamicCast<MyCsmaNetDevice>(m_devices[ifIndex]);
 			if (m_ccMode == 3){ // HPCC
 				ih->PushHop(Simulator::Now().GetTimeStep(), m_txBytes[ifIndex], dev->GetQueue()->GetNBytesTotal(), dev->GetDataRate().GetBitRate());
 			}else if (m_ccMode == 10){ // HPCC-PINT
@@ -552,7 +548,6 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 								log_dt + log_qlen + log_1e9 - log_B - 2*log_T
 								) / fct
 							) * 256;
-					// 2^((log2(dt)*fct+log2(qlen/256)*fct+log2(1e9)*fct-log2(B)*fct-2*log2(T)*fct)/fct)*256 ~= dt*qlen*1e9/(B*T^2)
 				}
 				if (m_lastPktSize[ifIndex] > 0){
 					int byte = m_lastPktSize[ifIndex];
@@ -561,7 +556,6 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 								log_byte + log_1e9 - log_B - log_T
 								)/fct
 							);
-					// 2^((log2(byte)*fct+log2(1e9)*fct-log2(B)*fct-log2(T)*fct)/fct) ~= byte*1e9 / (B*T)
 				}
 				if (m_maxRtt > dt && m_u[ifIndex] > 0){
 					int log_T_dt = log2apprx(m_maxRtt - dt, b, m, l); // ~log2(T-dt)*fct
@@ -570,7 +564,6 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 								log_T_dt + log_u - log_T
 								)/fct
 							) / 8192;
-					// 2^((log2(T-dt)*fct+log2(u*512)*fct-log2(T)*fct)/fct)/512 = (T-dt)*u/T
 				}
 				newU = qterm+byteTerm+uTerm;
 
@@ -606,23 +599,19 @@ void SwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pack
 	m_lastPktTs[ifIndex] = Simulator::Now().GetTimeStep();
 }
 
-int SwitchNode::logres_shift(int b, int l){
+int MySwitchNode::logres_shift(int b, int l){
 	static int data[] = {0,0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5};
 	return l - data[b];
 }
 
-int SwitchNode::log2apprx(int x, int b, int m, int l){
+int MySwitchNode::log2apprx(int x, int b, int m, int l){
 	int x0 = x;
 	int msb = int(log2(x)) + 1;
 	if (msb > m){
 		x = (x >> (msb - m) << (msb - m));
-		#if 0
-		x += + (1 << (msb - m - 1));
-		#else
 		int mask = (1 << (msb-m)) - 1;
 		if ((x0 & mask) > (rand() & mask))
 			x += 1<<(msb-m);
-		#endif
 	}
 	return int(log2(x) * (1<<logres_shift(b, l)));
 }

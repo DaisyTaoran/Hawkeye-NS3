@@ -420,7 +420,7 @@ namespace ns3 {
 		ipv4h.SetTtl(1); // 设置为1，表示数据包只能在本地网络中传输。
 		ipv4h.SetIdentification(UniformVariable(0, 65536).GetValue());
 		p->AddHeader(ipv4h); 
-		// 添加以太网头部，0x800表示IPv4协议。
+		// 添加Ppp头部，0x800表示IPv4协议。
 		AddHeader(p, 0x800); 
 		// 从队列0处发送数据包p，并传递自定义头部ch
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
