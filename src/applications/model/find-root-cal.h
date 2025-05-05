@@ -23,7 +23,7 @@ struct EdgeNode {// 边表结点
 };
 
 struct VertexNode {// 顶点  
-        int nodeIdx, portIdx; // nodeIdx=-1代表此节点代表某个流，而非某Node，此时portIdx就是流Idx
+        int nodeIdx, portIdx, tag; // nodeIdx=-1代表此节点代表某个流，而非某Node，此时portIdx就是流Idx
         int flowWeight;
         std::vector<int> pfcPauseNum, nextnode;
         std::vector<EdgeNode> edges; // 记录从这个点出发的所有边 
@@ -34,34 +34,36 @@ struct VertexNode {// 顶点
 
 class FindRootCal : public Object{   // 可以识别根本原因（例如流争用）、PFC传播路径和受害流。 
 public:
-	bool PRINT_EN = true;	// =true时，执行这个class时打印信息到屏幕上
+	bool PRINT_EN = false;	// =true时，执行这个class时打印信息到屏幕上
+	std::string fout_path;
+	FILE *fin, *fout;
 	
-    	FindRootCal(){}
+    	FindRootCal();
+    	~FindRootCal();
     	void SetNextHop(std::map< Ptr<Node>, std::map< Ptr<Node>, std::vector<Ptr<Node>> > > *nexth);
     	void ReadAllFiles(std::vector<std::string> fileNames); 	// read all file and refresh the topo in txt
     	void ReadOneFile(uint32_t node);			// read one file and refresh the topo in txt
     
 private:
-	FILE *fin;
 	int rootNodeIdx;
-	std::vector<int> nodesIdx;
+	int flowContNum;
     	std::vector<VertexNode> vexList; 
     	std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>>> > *nexthop;
-    	std::map<int, long> lastPos;
-    
+    	std::map<int, long> lastPos; // 文件上一次读取位置
+    	bool hasAddFlowToPort, hasAddPortToFlow;
+    	
     	void PrintNodeFlow();
-    	int GetRootNode();//--------------
     	int GetVertexIdx(int nodeid, int portid);
     	int GetEdge(int srcvex, int dstvex);
     	int GetEdge(int srcnode, int srcport, int dstnode, int dstport);
     	int GetNextHop(uint32_t node, uint32_t dstnode);
     	void AddFlowInNode(int vexIdx);
     	void AddFlow(int srcvex, int dstvex, int flownum);
-    	void AddFlow(int srcnode, int srcport, int dstnode, int dstport, int flownum);
+    	void AddFlow(int srcnode, int srcport, uint32_t srcip, int dstnode, int dstport, int flownum);
     	void ReadPolling(uint32_t node);
     	void ReadSignal(uint32_t node);
     	void ReadFileForPause(std::string &filename);
-    	int CalFlowCont(int node);
+    	void ClearWeight();
 };
 
 };

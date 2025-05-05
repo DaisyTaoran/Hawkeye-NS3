@@ -28,6 +28,8 @@
 #include "ns3/ptr.h"
 #include "ns3/ipv4-address.h"
 #include <ns3/rdma.h>
+#include <ns3/rdma-driver.h>
+
 
 namespace ns3 {
 
@@ -60,6 +62,7 @@ public:
   void SetPG (uint16_t pg);
   void SetSize(uint64_t size);
   void Finish();
+  Ptr<RdmaQueuePair> NewQp(void);
 
 protected:
   virtual void DoDispose (void);
@@ -76,6 +79,10 @@ private:
   uint16_t m_sport, m_dport;
   uint32_t m_win; // bound of on-the-fly packets
   uint64_t m_baseRtt; // base Rtt
+  DataRate m_rate;
+  
+  Ptr<RdmaDriver> m_rdma;
+  bool hasStop = false;
 };
 
 } // namespace ns3

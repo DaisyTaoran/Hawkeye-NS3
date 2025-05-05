@@ -53,7 +53,10 @@ public:
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
 	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
-	void AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish); // add a new qp (new send)
+	void AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish); // add a new qp (new send)
+	void AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, DataRate rate, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish); // add a new qp (new send)
+	Ptr<RdmaQueuePair> OnlyAddQueuePair(uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish); // add a new qp (new send)
+	Ptr<RdmaQueuePair> OnlyAddQueuePair(uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, DataRate rate, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish); 
 	void DeleteQueuePair(Ptr<RdmaQueuePair> qp);
 
 	Ptr<RdmaRxQueuePair> GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create); // get a rxQp
@@ -156,11 +159,35 @@ public:
 
 	//RDMA NPA
 	bool m_agent_flag;
+	struct FiveTuple{		// 五元组
+		uint32_t srcIp;			
+		uint32_t dstIp;			
+		uint16_t srcPort;		
+		uint16_t dstPort;		
+		uint8_t protocol;		
+		bool operator==(const FiveTuple &other) const{
+			return srcIp == other.srcIp
+				&& dstIp == other.dstIp 
+				&& srcPort == other.srcPort 
+				&& dstPort == other.dstPort 
+				&& protocol == other.protocol;
+		}
+	};
+	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);
+	static uint32_t FiveTupleHash(const FiveTuple &fiveTuple);
 	
 	// Analysis node
 	bool m_analysis_flag;
+	std::string calfout_path;
 	Ptr<FindRootCal> analys_app = NULL;
 	std::map<Ptr<Node>, std::map<Ptr<Node>, std::vector<Ptr<Node>> > > *nextHop = NULL;
+	
+	bool m_monitor_flag = false;
+	FILE* fp_flow_monitor = NULL;
+	double lastMonTime = 0;
+	double lastPktTime = 0;
+	uint32_t pktBytes = 0; 
+	
 };
 
 } /* namespace ns3 */

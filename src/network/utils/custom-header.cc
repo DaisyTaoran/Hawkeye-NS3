@@ -179,7 +179,8 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		  i.WriteHtonU16 (0);
 		  // SeqTsHeader
 		  if(udp.dport == 4791) {
-		        i.WriteU16 (0);
+		        i.WriteU8 (udp.op);
+		        i.WriteU8 (0);
 		        i.WriteU16 (0xffff);
 		        i.WriteU16 (0);
 		        i.WriteHtonU16 (udp.pg);
@@ -342,7 +343,8 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 
 		  // SeqTsHeader
 		  if(udp.dport == 4791) {
-		        i.ReadNtohU16 ();
+		        udp.op = i.ReadU8 ();
+		        i.ReadU8 ();
 		        i.ReadNtohU32 ();
 		        udp.pg =  i.ReadNtohU16 ();
 		        udp.seq = i.ReadNtohU32 ();

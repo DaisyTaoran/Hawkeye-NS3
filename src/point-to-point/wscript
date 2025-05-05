@@ -24,6 +24,7 @@ def build(bld):
 		'model/pint.cc',
 		'model/ppp-trailer.cc',
 		'model/bth-header.cc',
+		'model/mytag-header.cc',
         ]
 
     module_test = bld.create_ns3_module_test_library('point-to-point')
@@ -56,6 +57,7 @@ def build(bld):
 		'helper/sim-setting.h',
 		'model/ppp-trailer.h',
 		'model/bth-header.h',
+		'model/mytag-header.h',
         ]
 
     if (bld.env['ENABLE_EXAMPLES']):

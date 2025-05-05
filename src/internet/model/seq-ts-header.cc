@@ -35,6 +35,7 @@ SeqTsHeader::SeqTsHeader ()
 {
 	if (IntHeader::mode == 1)
 		ih.ts = Simulator::Now().GetTimeStep();
+	//m_op = 0;
 }
 
 void
@@ -101,9 +102,9 @@ SeqTsHeader::Serialize (Buffer::Iterator start) const
 { 
   Buffer::Iterator i = start;
   /* 改 */
-  if(isRdma){   
-        i.WriteU8(0); 		// Opcode: 0 = SEND First
-	i.WriteU8(0);
+  if(isRdma){  
+        // write8 
+	i.WriteU16(0);
 	i.WriteU16(0xffff);     // Partition Key
 	i.WriteU16(0); 		// reserved = 8b. this 16b is reversed(8) + m_pg(8)
 	i.WriteHtonU16(m_pg); 	// m_pg(24b) = 8b + 16b, 8b in reserved
@@ -124,6 +125,7 @@ SeqTsHeader::Deserialize (Buffer::Iterator start)
   Buffer::Iterator i = start;
   /* 改 */
   if(isRdma){   
+        //m_op = i.ReadU8();
 	i.ReadU16();
 	i.ReadU32();
 	m_pg = i.ReadNtohU16();

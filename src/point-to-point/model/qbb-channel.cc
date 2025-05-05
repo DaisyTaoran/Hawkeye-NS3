@@ -98,7 +98,6 @@ QbbChannel::TransmitStart (
   NS_ASSERT (m_link[1].m_state != INITIALIZING);
 
   uint32_t wire = src == m_link[0].m_src ? 0 : 1;
-
   Simulator::ScheduleWithContext (m_link[wire].m_dst->GetNode ()->GetId (),
                                   txTime + m_delay, &QbbNetDevice::Receive,
                                   m_link[wire].m_dst, p);

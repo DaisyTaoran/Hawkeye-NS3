@@ -28,8 +28,9 @@ public:
 	Time m_nextAvail;	//< Soonest time of next send
 	uint32_t wp; // current window of packets
 	uint32_t lastPktSize;
-	Callback<void> m_notifyAppFinish;
-
+	Callback<void> m_notifyAppFinish; // == node::DeleteApp(the qp's RdmaClient)
+	Callback<Ptr<RdmaQueuePair>> m_notifyAppSentFinish;
+	
 	/******************************
 	 * runtime states
 	 *****************************/
@@ -95,8 +96,9 @@ public:
 	void SetWin(uint32_t win);
 	void SetBaseRtt(uint64_t baseRtt);
 	void SetVarWin(bool v);
-	void SetAppNotifyCallback(Callback<void> notifyAppFinish);
-
+	void SetAppNotifyCallback(Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish);
+	void SetRate(DataRate rate);
+	
 	uint64_t GetBytesLeft();
 	uint32_t GetHash(void);
 	void Acknowledge(uint64_t ack);

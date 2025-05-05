@@ -1,3 +1,4 @@
+#include <iostream>
 #include <ns3/simulator.h>
 #include <ns3/seq-ts-header.h>
 #include <ns3/udp-header.h>
@@ -7,11 +8,16 @@
 #include "ns3/double.h"
 #include "ns3/data-rate.h"
 #include "ns3/pointer.h"
+#include "ns3/log.h"
 #include "rdma-hw.h"
 #include "ppp-header.h"
 #include "qbb-header.h"
 #include "cn-header.h"
 #include "bth-header.h"
+#include "mytag-header.h"
+#include "ns3/random-variable.h"
+
+NS_LOG_COMPONENT_DEFINE("RdmaHw");
 
 namespace ns3{
 
@@ -220,18 +226,19 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-void RdmaHw::AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish){
+
+void RdmaHw::AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
 	qp->SetSize(size);
 	qp->SetWin(win);
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
-	qp->SetAppNotifyCallback(notifyAppFinish);
+	qp->SetAppNotifyCallback(notifyAppFinish, notifyAppSentFinish);
 
 	// add qp
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
-	m_nic[nic_idx].qpGrp->AddQp(qp);
+	m_nic[nic_idx].qpGrp->AddQp(qp); // this Ptr m_nic[i].qpGrp == m_nic[i].dev.m_rdmaEQ.m_qpGrp. It is set in RdmaHw::SetUp().
 	uint64_t key = GetQpKey(dip.Get(), sport, pg);
 	m_qpMap[key] = qp;
 
@@ -255,6 +262,121 @@ void RdmaHw::AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Addre
 
 	// Notify Nic
 	m_nic[nic_idx].dev->NewQp(qp);
+}
+
+void RdmaHw::AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, DataRate rate, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish){
+	// create qp
+	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	qp->SetSize(size);
+	qp->SetWin(win);
+	qp->SetBaseRtt(baseRtt);
+	qp->SetVarWin(m_var_win);
+	qp->SetAppNotifyCallback(notifyAppFinish, notifyAppSentFinish);
+
+	// add qp
+	uint32_t nic_idx = GetNicIdxOfQp(qp);
+	m_nic[nic_idx].qpGrp->AddQp(qp); // this Ptr m_nic[i].qpGrp == m_nic[i].dev.m_rdmaEQ.m_qpGrp. It is set in RdmaHw::SetUp().
+	uint64_t key = GetQpKey(dip.Get(), sport, pg);
+	m_qpMap[key] = qp;
+
+	// set init variables
+	DataRate m_bps = m_nic[nic_idx].dev->GetDataRate();
+	qp->m_rate = rate;
+	qp->m_max_rate = m_bps;
+	if (m_cc_mode == 1){
+		qp->mlx.m_targetRate = m_bps;
+	}else if (m_cc_mode == 3){
+		qp->hp.m_curRate = rate;
+		if (m_multipleRate){
+			for (uint32_t i = 0; i < IntHeader::maxHop; i++)
+				qp->hp.hopState[i].Rc = m_bps;
+		}
+	}else if (m_cc_mode == 7){
+		qp->tmly.m_curRate = rate;
+	}else if (m_cc_mode == 10){
+		qp->hpccPint.m_curRate = rate;
+	}
+
+	// Notify Nic
+	m_nic[nic_idx].dev->NewQp(qp);
+}
+
+Ptr<RdmaQueuePair> RdmaHw::OnlyAddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish){
+	// create qp
+	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	qp->SetSize(size);
+	qp->SetWin(win);
+	qp->SetBaseRtt(baseRtt);
+	qp->SetVarWin(m_var_win);
+	qp->SetAppNotifyCallback(notifyAppFinish, notifyAppSentFinish);
+
+	// add qp
+	uint32_t nic_idx = GetNicIdxOfQp(qp);
+	m_nic[nic_idx].qpGrp->AddQp(qp); // this Ptr m_nic[i].qpGrp == m_nic[i].dev.m_rdmaEQ.m_qpGrp. It is set in RdmaHw::SetUp().
+	uint64_t key = GetQpKey(dip.Get(), sport, pg);
+	m_qpMap[key] = qp;
+
+	// set init variables
+	DataRate m_bps = m_nic[nic_idx].dev->GetDataRate();
+	qp->m_rate = m_bps;
+	qp->m_max_rate = m_bps;
+	if (m_cc_mode == 1){
+		qp->mlx.m_targetRate = m_bps;
+	}else if (m_cc_mode == 3){
+		qp->hp.m_curRate = m_bps;
+		if (m_multipleRate){
+			for (uint32_t i = 0; i < IntHeader::maxHop; i++)
+				qp->hp.hopState[i].Rc = m_bps;
+		}
+	}else if (m_cc_mode == 7){
+		qp->tmly.m_curRate = m_bps;
+	}else if (m_cc_mode == 10){
+		qp->hpccPint.m_curRate = m_bps;
+	}
+
+	//设置时间
+	qp->m_nextAvail = Simulator::Now();
+	if(qp==nullptr)printf("空的!!!\n");
+	return qp;
+}
+
+Ptr<RdmaQueuePair> RdmaHw::OnlyAddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, DataRate rate, Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish){
+	// create qp
+	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	qp->SetSize(size);
+	qp->SetWin(win);
+	qp->SetBaseRtt(baseRtt);
+	qp->SetVarWin(m_var_win);
+	qp->SetAppNotifyCallback(notifyAppFinish, notifyAppSentFinish);
+
+	// add qp
+	uint32_t nic_idx = GetNicIdxOfQp(qp);
+	m_nic[nic_idx].qpGrp->AddQp(qp); // this Ptr m_nic[i].qpGrp == m_nic[i].dev.m_rdmaEQ.m_qpGrp. It is set in RdmaHw::SetUp().
+	uint64_t key = GetQpKey(dip.Get(), sport, pg);
+	m_qpMap[key] = qp;
+
+	// set init variables
+	DataRate m_bps = m_nic[nic_idx].dev->GetDataRate();
+	qp->m_rate = rate;
+	qp->m_max_rate = m_bps;
+	if (m_cc_mode == 1){
+		qp->mlx.m_targetRate = m_bps;
+	}else if (m_cc_mode == 3){
+		qp->hp.m_curRate = rate;
+		if (m_multipleRate){
+			for (uint32_t i = 0; i < IntHeader::maxHop; i++)
+				qp->hp.hopState[i].Rc = m_bps;
+		}
+	}else if (m_cc_mode == 7){
+		qp->tmly.m_curRate = rate;
+	}else if (m_cc_mode == 10){
+		qp->hpccPint.m_curRate = rate;
+	}
+
+	//设置时间
+	qp->m_nextAvail = Simulator::Now();
+	//if(qp==nullptr) printf("空的!!!\n");
+	return qp;
 }
 
 void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
@@ -309,9 +431,11 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	}
 	rxQp->m_ecn_source.total++;
 	rxQp->m_milestone_rx = m_ack_interval;
-
+	/* TODO:可能是正常刘一直上升的原因？*/
 	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size);
 	if (x == 1 || x == 2){ //generate ACK or NACK
+		//int node = m_node->GetId();
+		//if(node==5||)
 		qbbHeader seqh;
 		seqh.SetSeq(rxQp->ReceiverNextExpectedSeq);
 		seqh.SetPG(ch.udp.pg);
@@ -320,7 +444,6 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 		seqh.SetIntHeader(ch.udp.ih);
 		if (ecnbits)
 			seqh.SetCnp();
-
 		Ptr<Packet> newp = Create<Packet>(std::max(60-14-20-(int)seqh.GetSerializedSize(), 0));
 		newp->AddHeader(seqh);
 
@@ -331,14 +454,18 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 		head.SetTtl(64);
 		head.SetPayloadSize(newp->GetSize());
 		head.SetIdentification(rxQp->m_ipid++);
-
+		if(ch.udp.op == 1) rxQp->m_ipid--;
+		
 		newp->AddHeader(head);
 		AddHeader(newp, 0x800);	// Attach PPP header
 		// send
 		uint32_t nic_idx = GetNicIdxOfRxQp(rxQp);
 		m_nic[nic_idx].dev->RdmaEnqueueHighPrioQ(newp);
+		//if(x==2) printf("create nack and put in queue.\n");
 		m_nic[nic_idx].dev->TriggerTransmit();
 	}
+	
+	
 	return 0;
 }
 
@@ -395,8 +522,9 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 	uint8_t cnp = (ch.ack.flags >> qbbHeader::FLAG_CNP) & 1;
 	int i;
 	Ptr<RdmaQueuePair> qp = GetQp(ch.sip, port, qIndex);
-	if (qp == NULL){
+	if (qp == NULL){// TODO:暂时删掉这个部分，不然攻击者一直输出
 		std::cout << "ERROR: " << "node:" << m_node->GetId() << ' ' << (ch.l3Prot == 0xFC ? "ACK" : "NACK") << " NIC cannot find the flow\n";
+		std::cout << "ack.sip=" << ch.sip << " ack.dport=" << port << " ack.pg=" << qIndex << " time=" << Simulator::Now().GetSeconds() <<"\n";
 		return 0;
 	}
 
@@ -436,26 +564,23 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 			} 
 		}
 		if (qp->npa.m_maxRtt > 10000 && (Simulator::Now().GetTimeStep() % 1000000 > 900000)){ // 当历史最大RTT超过 10000，并且在特定时间窗口内：触发轮询包发送
-			qp->npa.m_maxRtt = 0;					// 重置历史最大rtt
-			// 构造轮询数据包
+			qp->npa.m_maxRtt = 0; // 重置历史最大rtt
 			Ptr<Packet> p = Create<Packet>(0);
-			CustomHeader pollingHdr(CustomHeader::L4_Header);	// 初始化轮询包头部
-			pollingHdr.l3Prot = 0xFA;				// L3协议类型设置为轮询数据包
-			pollingHdr.polling.seq = ch.ack.seq;			// 设置序列号
+			CustomHeader pollingHdr(CustomHeader::L4_Header);	
+			pollingHdr.l3Prot = 0xFA;				
+			pollingHdr.polling.seq = ch.ack.seq;			
 			p->AddHeader(pollingHdr);
-			// 添加ipv4头
 			Ipv4Header head;
-			head.SetDestination(Ipv4Address(ch.sip));		// 轮询包的目的IP==ch的源ip
-			head.SetSource(Ipv4Address(ch.dip));			// 轮询包的源IP==ch的目的ip
-			head.SetProtocol(0xFA);					// L3协议设置为轮询数据包
+			head.SetDestination(Ipv4Address(ch.sip));		
+			head.SetSource(Ipv4Address(ch.dip));			
+			head.SetProtocol(0xFA);					
 			head.SetTtl(64);
 			head.SetPayloadSize(p->GetSize());
 			head.SetIdentification(qp->m_ipid++);
-			p->AddHeader(head);					// 将IPv4头添加到数据包中
-			AddHeader(p, 0x800);					// 添加以太网头（0x800 表示IPv4协议）
-			// 发送轮询数据包
-			dev->RdmaEnqueueHighPrioQ(p);				// 将轮询数据包放入高优先级队列
-			dev->TriggerTransmit();					// 触发传输
+			p->AddHeader(head);					
+			AddHeader(p, 0x800);
+			dev->RdmaEnqueueHighPrioQ(p);	
+			dev->TriggerTransmit();				
 		}
 	}
 
@@ -474,24 +599,35 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){ // 检测到性能下�
 }
 
 int RdmaHw::ReceiveSignal(Ptr<Packet> p, CustomHeader &ch){
-	if(!m_analysis_flag)
-		return 0;
-	if(ch.signal.congestionPort){
+	if(m_analysis_flag && ch.signal.pfcOff){ // ch.signal.pfcOff=1使，表示它是专门发给analysis的包
 		
-		printf("\n========== RdmaHw in analyser receive analysis signal, from node %d, time = %f ==========\n", 
-			ch.sip, Simulator::Now().GetSeconds());
+		uint32_t nodeid = ch.signal.congestionPort;
+		//printf("\n========== RdmaHw in analyser receive analysis signal, from node %d, time = %f ==========\n", nodeid, Simulator::Now().GetSeconds());
 		
-		fflush(stdout);
+		//fflush(stdout);
 		
-		if(analys_app == NULL) analys_app = CreateObject<FindRootCal>();
+		if(analys_app == NULL){ 
+			analys_app = CreateObject<FindRootCal>();
+			analys_app->fout_path = calfout_path;
+		}
 		analys_app->SetNextHop(nextHop);
-		analys_app->ReadOneFile(ch.sip);
-		
+		analys_app->ReadOneFile(nodeid);
+	}
+	uint32_t size = m_node->GetNDevices();
+	for(int i = 0; i < size; i++){
+		Ptr<NetDevice> netdev = m_node->GetDevice(i);
+		Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(netdev);
+		if(dev == nullptr){
+			//std::cout << "Device " << i << " is not a QbbNetDevice (actual type: " << netdev->GetInstanceTypeId().GetName() << ")" << '\n';
+			continue;
+		}
+		dev->SendSignal(0,0,0,m_node->GetId(),0);
 	}
 	return 0;
 }
 
 int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
+	
 	if (ch.l3Prot == 0x11){ // UDP
 		ReceiveUdp(p, ch);
 	}else if (ch.l3Prot == 0xFF){ // CNP
@@ -562,7 +698,7 @@ void RdmaHw::QpComplete(Ptr<RdmaQueuePair> qp){
 
 	// This callback will log info
 	// It may also delete the rxQp on the receiver
-	m_qpCompleteCallback(qp);
+	m_qpCompleteCallback(qp);//
 
 	qp->m_notifyAppFinish();
 
@@ -601,9 +737,51 @@ void RdmaHw::RedistributeQp(){
 	}
 }
 
+uint32_t RdmaHw::EcmpHash(const uint8_t* key, size_t len, uint32_t seed) {
+  uint32_t h = seed;
+  if (len > 3) {
+    const uint32_t* key_x4 = (const uint32_t*) key;
+    size_t i = len >> 2;
+    do {
+      uint32_t k = *key_x4++;
+      k *= 0xcc9e2d51;
+      k = (k << 15) | (k >> 17);
+      k *= 0x1b873593;
+      h ^= k;
+      h = (h << 13) | (h >> 19);
+      h += (h << 2) + 0xe6546b64;
+    } while (--i);
+    key = (const uint8_t*) key_x4;
+  }
+  if (len & 3) {
+    size_t i = len & 3;
+    uint32_t k = 0;
+    key = &key[i - 1];
+    do {
+      k <<= 8;
+      k |= *key--;
+    } while (--i);
+    k *= 0xcc9e2d51;
+    k = (k << 15) | (k >> 17);
+    k *= 0x1b873593;
+    h ^= k;
+  }
+  h ^= len;
+  h ^= h >> 16;
+  h *= 0x85ebca6b;
+  h ^= h >> 13;
+  h *= 0xc2b2ae35;
+  h ^= h >> 16;
+  return h;
+}
+
+uint32_t RdmaHw::FiveTupleHash(const FiveTuple &fiveTuple){
+	return EcmpHash((const uint8_t*)&fiveTuple, sizeof(fiveTuple), 0x233) % (1 << 10);
+}
+
 Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint32_t payload_size = qp->GetBytesLeft();
-	if (m_mtu < payload_size)
+	if(m_mtu < payload_size)	
 		payload_size = m_mtu;
 	Ptr<Packet> p = Create<Packet> (payload_size);
 	// add SeqTsHeader
@@ -612,14 +790,8 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	seqTs.SetSeq (qp->snd_nxt);
 	seqTs.SetPG (qp->m_pg);
 	if(qp->dport == 4791) seqTs.isRdma = true;
+	//if(needToKeep) seqTs.SetOp(1);
 	p->AddHeader (seqTs);
-	/* TODO:add BTHeader
-	bthHeader bhead;
-	bhead.SetSeq (qp->snd_nxt);
-	bhead.SetKey (0xffff);
-	bhead.SetPG (qp->m_pg);
-	p->AddHeader (bhead);
-	*/
 	// add udp header
 	UdpHeader udpHeader;
 	udpHeader.SetDestinationPort (qp->dport);  // 4791->RoCEv2
@@ -643,14 +815,42 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	// update state
 	qp->snd_nxt += payload_size;
 	qp->m_ipid++;
-
+	
 	// return
 	return p;
 }
 
 void RdmaHw::PktSent(Ptr<RdmaQueuePair> qp, Ptr<Packet> pkt, Time interframeGap){
+	double nowTime = Simulator::Now().GetSeconds();
+	
 	qp->lastPktSize = pkt->GetSize();
 	UpdateNextAvail(qp, interframeGap, pkt->GetSize());
+	
+	if(qp->GetBytesLeft() == 0)
+	{
+		Ptr<RdmaQueuePair> newqp = qp->m_notifyAppSentFinish();
+		if(newqp != nullptr)
+			newqp->m_nextAvail = qp->m_nextAvail;
+	}
+	
+	if(m_monitor_flag){
+		if(nowTime - lastPktTime > 0.02){
+			fprintf(fp_flow_monitor, "%lf,%u\n", lastPktTime, pktBytes);
+			fprintf(fp_flow_monitor, "%lf,%u\n", lastPktTime + 0.00001, 0);
+			fprintf(fp_flow_monitor, "%lf,%u\n", nowTime, 0);
+			lastMonTime = nowTime;
+    			pktBytes = 0;
+		}		
+		pktBytes += pkt->GetSize();
+		if(nowTime - lastMonTime > 0.001){
+    			fprintf(fp_flow_monitor, "%lf,%u\n", nowTime, pktBytes);
+			lastMonTime = nowTime;
+    			pktBytes = 0;
+    		}
+	}
+	
+	lastPktTime = nowTime;
+	return;
 }
 
 void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t pkt_size){

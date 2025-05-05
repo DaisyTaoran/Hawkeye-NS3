@@ -37,7 +37,7 @@
 #include <ns3/rdma-driver.h>
 #include <ns3/switch-node.h>
 #include <ns3/sim-setting.h>
-#include <ns3/analysis-client-server-helper.h>
+//#include <ns3/analysis-client-server-helper.h>
 
 using namespace ns3;
 using namespace std;
@@ -48,7 +48,7 @@ uint32_t cc_mode = 1;
 bool enable_qcn = true, use_dynamic_pfc_threshold = true;
 uint32_t packet_payload_size = 1000, l2_chunk_size = 0, l2_ack_interval = 0;
 double pause_time = 5, simulator_stop_time = 3.01;
-std::string data_rate, link_delay, topology_file, flow_file, trace_file, trace_output_file;
+std::string data_rate, link_delay, topology_file, flow_file, attacker_file, trace_file, trace_output_file;
 std::string fct_output_file = "fct.txt";
 std::string pfc_output_file = "pfc.txt";
 
@@ -89,11 +89,15 @@ unordered_map<uint64_t, double> rate2pmax;
 
 set<int> agent_nodes;
 set<int> no_cc_nodes;
+set<int> attack_nodes;
+
+uint32_t attacker_num, attacker_dst;
+double attacker_start_time, attacker_duration, attacker_interval;
 
 /************************************************
  * Runtime varibles
  ***********************************************/
-std::ifstream topof, flowf, tracef;
+std::ifstream topof, flowf, tracef,  attackerf;
 
 NodeContainer n; // 在 network/helper/node-container.h 中
 
@@ -132,22 +136,24 @@ struct FlowInput{
 FlowInput flow_input = {0};
 uint32_t flow_num;
 
+
 void ReadFlowInput(){   // 从文件中读取一行流信息
 	if (flow_input.idx < flow_num){
 		flowf >> flow_input.src >> flow_input.dst >> flow_input.pg >> flow_input.dport >> flow_input.maxPacketCount >> flow_input.start_time;
 		NS_ASSERT(n.Get(flow_input.src)->GetNodeType() == 0 && n.Get(flow_input.dst)->GetNodeType() == 0);
 	}
-}
+}/*
 void ScheduleFlowInputs(){ // 按计划读取流信息
 	while (flow_input.idx < flow_num && Seconds(flow_input.start_time) == Simulator::Now()){
 		uint32_t port = portNumder[flow_input.src][flow_input.dst]++; // get a new port number 
 		RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
-		ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src)); // 绑定到节点src
+		//clientHelper.SetAttribute("DataRate", StringValue("10Gbps"));
+	        ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src));
 		appCon.Start(Time(0)); // no stop time
-
+                appCon.Stop(Seconds(simulator_stop_time-1));
 		// get the next flow input
 		flow_input.idx++;
-		ReadFlowInput();        // 再读一行流信息，其中包括flow_input.start_time
+		ReadFlowInput();
 	}
 
 	// schedule the next time to run this function
@@ -156,6 +162,62 @@ void ScheduleFlowInputs(){ // 按计划读取流信息
 	}else { // no more flows, close the file
 		flowf.close();
 	}
+}*/
+void ScheduleFlowInputs(){ // 按计划读取流信息
+	while (flow_input.idx < flow_num){
+		uint32_t port = portNumder[flow_input.src][flow_input.dst]++; 
+		RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
+		clientHelper.SetAttribute("DataRate", StringValue("10Gbps"));
+	        ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src)); 
+		appCon.Start(Seconds(flow_input.start_time)); // no stop time
+                appCon.Stop(Seconds(simulator_stop_time - 0.001));
+		flow_input.idx++;
+		ReadFlowInput(); 
+	}
+
+	flowf.close();
+	
+}
+
+void ReadAttackerInput(){
+        attackerf >> attacker_start_time >> attacker_duration >> attacker_interval;
+        int node;
+        for(int i = 0; i < attacker_num; i++){
+                attackerf >> node;
+                attack_nodes.insert(node);
+                no_cc_nodes.insert(node); // attackers have no cc
+        }
+        attackerf.close();
+}
+void ScheduleAttackerInputs(){
+        printf("\nAttacker num = %d\n", attacker_num);
+        //int num = 0;
+        for(set<int>::iterator node = attack_nodes.begin(); node!= attack_nodes.end(); node++){
+                printf("set flow of attacker node %d\n", *node);
+                double curr_start = attacker_start_time;
+                double curr_stop = attacker_start_time + attacker_duration;
+                while(curr_start < simulator_stop_time - 0.01){
+                        uint32_t port = portNumder[*node][attacker_dst]++; // get a new port number 
+	                RdmaClientHelper clientHelper(3, serverAddress[*node], serverAddress[attacker_dst], port, 4791, 2000000, has_win?(global_t==1?maxBdp:pairBdp[n.Get(*node)][n.Get(attacker_dst)]):0, global_t==1?maxRtt:pairRtt[*node][attacker_dst]);
+	                //clientHelper.SetAttribute("DataRate", StringValue("50Gbps"));
+	                ApplicationContainer appCon = clientHelper.Install(n.Get(*node)); 
+	                
+	                appCon.Start(Seconds(curr_start)); 
+	                if(curr_stop < simulator_stop_time - 0.01)
+                                appCon.Stop(Seconds(curr_stop));
+                        else    
+                                appCon.Stop(Seconds(simulator_stop_time - 0.01));
+                        //printf("attacker:%f - %f\n", curr_start, curr_stop);
+                        //num++;
+                        //if(num==2) break;
+                        curr_start += attacker_interval;
+                        curr_stop = curr_start + attacker_duration;
+                }
+	        
+        }
+        fflush(stdout);
+        //printf("All the attacker has set its flow at time %f\n", Simulator::Now().GetSeconds());
+	//Simulator::Schedule(Seconds(attacker_interval), ScheduleAttackerInputs);
 }
 
 Ipv4Address node_id_to_ip(uint32_t id){ // 把 node id 转换为对应的 ip 地址
@@ -169,12 +231,11 @@ uint32_t ip_to_node_id(Ipv4Address ip){ // 把 ip 地址转换为对应的 node 
 void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){ // 处理 RDMA 队列对（Queue Pair, QP）的结束操作。
 	uint32_t sid = ip_to_node_id(q->sip), did = ip_to_node_id(q->dip);      // 算出源 node id 和目的 node id
 	uint64_t base_rtt = pairRtt[sid][did], b = pairBw[sid][did];            // 算出源节点和目的节点之间的基础 rtt 和带宽
-	// q->m_size 是队列对中传输的数据大小；packet_payload_size 是每个数据包的有效载荷大小；包括数据包自定义头部和内部头部的大小。
+	// q->m_size 是队列对中传输的数据大小；packet_payload_size 是每个数据包的有效载荷大小。
 	uint32_t total_bytes = q->m_size + ((q->m_size-1) / packet_payload_size + 1) * (CustomHeader::GetStaticWholeHeaderSize() - IntHeader::GetStaticSize()); // translate to the minimum bytes required (with header but no INT)
 	uint64_t standalone_fct = base_rtt + total_bytes * 8000000000lu / b;    // 独立流完成时间，表示在没有其他流干扰的情况下，完成数据传输所需的时间。常数用于将字节转换为纳秒
-	// sip, dip, sport, dport, size (B), start_time, fct (ns), standalone_fct (ns) 将队列对的相关信息写入输出文件
 	fprintf(fout, "%08x %08x %u %u %lu %lu %lu %lu\n", q->sip.Get(), q->dip.Get(), q->sport, q->dport, q->m_size, q->startTime.GetTimeStep(), (Simulator::Now() - q->startTime).GetTimeStep(), standalone_fct);
-	fflush(fout);                                                           // 立即写入输出文件，而不是缓存在内存中
+	fflush(fout);
 
 	// remove rxQp from the receiver 删除目标节点的接收队列
 	Ptr<Node> dstNode = n.Get(did);
@@ -187,9 +248,9 @@ void get_pfc(FILE* fout, Ptr<QbbNetDevice> dev, uint32_t type){ // 把pfc包的�
 }
 
 struct QlenDistribution{ // 用于统计队列长度的分布情况。它的作用是记录队列长度在不同范围内的出现次数，并以千字节（KB）为单位进行统计。
-	vector<uint32_t> cnt; // cnt[i] is the number of times that the queue len is i KB 队列长度为 i KB 的次数
+	vector<uint32_t> cnt; // cnt[i] = 队列长度为 i KB 的次数
 
-	void add(uint32_t qlen){ // 用于更新队列长度的统计信息。qlen 是当前的队列长度，单位是字节（Byte）
+	void add(uint32_t qlen){ // 更新队列长度的统计信息。qlen 是当前的队列长度，单位是字节（Byte）
 		uint32_t kb = qlen / 1000; // 队列长度从byte转换为KB
 		if (cnt.size() < kb+1)     // 如果动态数组大小不够，就增加索引，直到cnt[kb]存在
 			cnt.resize(kb+1);
@@ -247,7 +308,7 @@ void CalculateRoute(Ptr<Node> host){ // 基于广度优先搜索(BFS)的路由�
 		int d = dis[now];                       // 从起点 host 到当前节点 i 的跳数，记为 d
 		for (auto it = nbr2if[now].begin(); it != nbr2if[now].end(); it++){ // 遍历当前节点的邻居。映射nbr2if[now] ，存储当前节点的邻居节点及其对应的链路信息。
 			// skip down link
-			if (!it->second.up)                     // 跳过失效链路。如果链路状态为 down，则跳过该邻居节点 
+			if (!it->second.up)                     // 跳过失效链路。
 				continue;
 			Ptr<Node> next = it->first;             // 这个邻居，暂时叫他 next
 			// If 'next' have not been visited.
@@ -262,7 +323,8 @@ void CalculateRoute(Ptr<Node> host){ // 基于广度优先搜索(BFS)的路由�
 			}
 			// if 'now' is on the shortest path from 'next' to 'host'.
 			if (d + 1 == dis[next]){                // 如果当前节点 now 在从 next 到 host 的最短路径上：
-				nextHop[next][host].push_back(now);     // 则将 now 记录为 next 到 host 的下一跳节点。
+			        if(now->GetId()!=analysis_node || host->GetId()==analysis_node) // analysis不能作为中转节点
+				        nextHop[next][host].push_back(now);     // 则将 now 记录为 next 到 host 的下一跳节点。
 			}
 		}
 	}
@@ -278,7 +340,7 @@ void CalculateRoute(Ptr<Node> host){ // 基于广度优先搜索(BFS)的路由�
 void CalculateRoutes(NodeContainer &n){ // 用路由算法，计算所有节点到其他节点的最短路径。即，求全局的下一跳信息。
 	for (int i = 0; i < (int)n.GetN(); i++){ // 遍历每个节点
 		Ptr<Node> node = n.Get(i);
-		if (node->GetNodeType() == 0)           // 若当前节点不是交换机：
+		if (node->GetNodeType() == 0)           // 若当前节点是主机：
 			CalculateRoute(node);                   // 则计算从 node 到其他节点的最短路径。路径记在nextHop[nowNode][destNode]中。
 	}
 }
@@ -287,7 +349,7 @@ void SetRoutingEntries(){ // 设置路由表条目。根据全局的下一跳信
 	// For each node. 遍历 nextHop 中的所有节点
 	for (auto i = nextHop.begin(); i != nextHop.end(); i++){ 
 		Ptr<Node> node = i->first;      // 当前节点叫 node。
-		if(node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() == serverAddress[analysis_node]) continue;
+		//if(node->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal() == serverAddress[analysis_node])  continue;  
 		auto &table = i->second;        // table 是 node 的路由表，存储了从 node 到各个目标节点的下一跳信息。
 		for (auto j = table.begin(); j != table.end(); j++){ // 遍历 table 中的所有目标节点。
 			// The destination node.
@@ -461,6 +523,13 @@ int main(int argc, char *argv[])
 				conf >> v;
 				flow_file = v;
 				std::cout << "FLOW_FILE\t\t\t" << flow_file << "\n";
+			}
+			else if (key.compare("ATTACKER_FILE") == 0)
+			{
+				std::string v;
+				conf >> v;
+				attacker_file = v;
+				std::cout << "ATTACKER_FILE\t\t\t" << attacker_file << "\n";
 			}
 			else if (key.compare("TRACE_FILE") == 0)
 			{
@@ -725,10 +794,12 @@ int main(int argc, char *argv[])
 	topof.open(topology_file.c_str());
 	flowf.open(flow_file.c_str());
 	tracef.open(trace_file.c_str());
+	attackerf.open(attacker_file.c_str());
 	uint32_t node_num, switch_num, link_num, trace_num;
 	topof >> node_num >> switch_num >> link_num;
 	flowf >> flow_num;
 	tracef >> trace_num;
+	attackerf >> attacker_num >> attacker_dst;
 
 
 	//n.Create(node_num);
@@ -921,7 +992,7 @@ int main(int argc, char *argv[])
 			        if(dev == 0) continue; // 如果是p2p，就跳过
 				// set ecn
 				uint64_t rate = dev->GetDataRate().GetBitRate();
-				NS_ASSERT_MSG(rate2kmin.find(rate) != rate2kmin.end(), "must set kmin for each link speed"); // 若没有为rate设置kmin，则输出消息并终止程序
+				NS_ASSERT_MSG(rate2kmin.find(rate) != rate2kmin.end(), "must set kmin for each link speed"); // 若没设kmin，则输出并终止
 				NS_ASSERT_MSG(rate2kmax.find(rate) != rate2kmax.end(), "must set kmax for each link speed");
 				NS_ASSERT_MSG(rate2pmax.find(rate) != rate2pmax.end(), "must set pmax for each link speed");
 				sw->m_mmu->ConfigEcn(j, rate2kmin[rate], rate2kmax[rate], rate2pmax[rate]);
@@ -943,9 +1014,15 @@ int main(int argc, char *argv[])
 
 			//RDMA NPA detect temp
 			char telemetry_path[100];
-			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);     // 每个switch有一个telemetry文件，i 是节点索引
+			sprintf(telemetry_path, "mix/telemetry_%d.txt", i);     
 			sw->fp_telemetry = fopen(telemetry_path, "w");
-
+			/**/
+			char flowdata_path[100];
+			sprintf(flowdata_path, "mix/teleflowdata_%d.txt", i);     
+			sw->fp_flowdata = fopen(flowdata_path, "w");
+			
+			//sw->SetAttribute("AckHighPrio",UintegerValue(1));
+                        
 		}
 	}
 
@@ -982,31 +1059,42 @@ int main(int argc, char *argv[])
 			rdmaHw->SetAttribute("RateBound", BooleanValue(rate_bound));
 			rdmaHw->SetAttribute("DctcpRateAI", DataRateValue(DataRate(dctcp_rate_ai)));
 			rdmaHw->SetPintSmplThresh(pint_prob);
-
+			
+			char monitor_path[100];
+			sprintf(monitor_path, "mixmonitor/agent_%d.txt", i);
+			rdmaHw->fp_flow_monitor = fopen(monitor_path, "w");
+                        
 			// RDMA NPA
-			if(agent_nodes.find(i) != agent_nodes.end()) // 是agent_node
+			if(agent_nodes.find(i) != agent_nodes.end()) {
 				rdmaHw->m_agent_flag = true;
-			else                                         // 不是agent_node
+			}else 
 				rdmaHw->m_agent_flag = false;
-			// TODO: Set analysis node. 设置分析服务器。
-			if(i == node_num-1){
+			/* Is Attacker */
+			if(i==5 || i==6 || i==7 || i==8)
+			        rdmaHw->SetAttribute("Mtu", UintegerValue(500));
+			if(/*i==1 || i==2 || i==5*/false) {
+			        rdmaHw->m_monitor_flag = true;
+			}	                                      
+			// Set analysis node. 
+			if(i == analysis_node){
 			        rdmaHw->m_analysis_flag = true;
 			        rdmaHw->nextHop = &nextHop;
+			        rdmaHw->calfout_path = "mix/find_root_cal.txt";
 			}else{
 			        rdmaHw->m_analysis_flag = false;
 			}
 			if(no_cc_nodes.find(i) != no_cc_nodes.end())
 				rdmaHw->SetAttribute("CcMode", UintegerValue(0));
 			// create and install RdmaDriver
-			Ptr<RdmaDriver> rdma = CreateObject<RdmaDriver>(); // 新建一个 RDMA驱动
-			Ptr<Node> node = n.Get(i);      // 函数在     network/helper/node-container.h  中，node[i] is server，not switch
-			rdma->SetNode(node);            // 函数在 point-to-point/model/rdma-driver.h 中，把节点 node[i] 安装到RDMA驱动中
-			rdma->SetRdmaHw(rdmaHw);        // 函数在 point-to-point/model/rdma-driver.h 中，把   rdmaHw 网卡安装到RDMA驱动中
-
+			Ptr<RdmaDriver> rdma = CreateObject<RdmaDriver>();
+			Ptr<Node> node = n.Get(i);      
+			rdma->SetNode(node);            // 把节点 node[i] 安装到RDMA驱动中
+			rdma->SetRdmaHw(rdmaHw);        // 把   rdmaHw 网卡安装到RDMA驱动中
 			node->AggregateObject (rdma);   // 函数在 core/model/object.h 中，将rdma驱动构件（各种协议）聚合到节点 node[i] 中
 			rdma->Init();                   // 函数在 point-to-point/model/rdma-driver.h 中，根据已安装的 rdmaHw 网卡进行初始化
 			rdma->TraceConnectWithoutContext("QpComplete", MakeBoundCallback (qp_finish, fct_output)); // 追踪绑定参数的回调qp_finish，但是不携带上下文信息；fct.txt
 			// qp_finish 函数处理 RDMA 队列对（Queue Pair, QP）的结束操作。
+			fflush(stdout);
 		}
 	}
 	#endif
@@ -1074,9 +1162,9 @@ int main(int argc, char *argv[])
 
 	FILE *trace_output = fopen(trace_output_file.c_str(), "w");
 	if (enable_trace){
-		//qbb.EnableTracing(trace_output, trace_nodes);           // 函数在 point-to-point/helper/qbb-helper.h 中,qbb是QbbHelper类，在trcae_output文件中输出跟踪信息
+		//qbb.EnableTracing(trace_output, trace_nodes);           // 函数在 point-to-point/helper/qbb-helper.h 中,qbb是QbbHelper类，在trace_output文件中输出跟踪信息
               
-                qbb.EnablePcapAll("mixpcap/mypcap");
+                //qbb.EnablePcapAll("mixpcap/mypcap");
         }
 	// dump link speed to trace file
 	{
@@ -1110,9 +1198,13 @@ int main(int argc, char *argv[])
 
 	flow_input.idx = 0;
 	if (flow_num > 0){
-		ReadFlowInput();        // 从文件中读取一行流信息，其中包括flow_input.start_time
-		Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs); // 计划在start_time时，按计划读取当时所有流信息
+		ReadFlowInput();
+		ScheduleFlowInputs();
+		//Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs); // 计划在start_time时读取
+		
 	}
+	ReadAttackerInput();
+	ScheduleAttackerInputs();
 
 	topof.close();
 	tracef.close();
@@ -1130,7 +1222,7 @@ int main(int argc, char *argv[])
 	//
 	// Now, do the actual simulation.
 	//
-	std::cout << "Running Simulation.\n";
+	std::cout << "\nRunning Simulation.\n\n";
 	fflush(stdout);
 	NS_LOG_INFO("Run Simulation.");
 	Simulator::Stop(Seconds(simulator_stop_time));

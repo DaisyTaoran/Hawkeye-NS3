@@ -53,6 +53,7 @@ public:
 
   void SetPG (uint16_t pg);
   uint16_t GetPG () const;
+  
 
   static TypeId GetTypeId (void);
   virtual TypeId GetInstanceTypeId (void) const;
@@ -62,7 +63,8 @@ public:
 private:
   virtual void Serialize (Buffer::Iterator start) const;
   virtual uint32_t Deserialize (Buffer::Iterator start);
-
+  
+  uint8_t m_op;
   uint32_t m_seq;
   uint16_t m_pg;
 public:

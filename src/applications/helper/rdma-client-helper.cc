@@ -23,47 +23,7 @@
 #include "ns3/string.h"
 
 namespace ns3 {
-/*
-RdmaServerHelper::RdmaServerHelper ()
-{
-}
 
-RdmaServerHelper::RdmaServerHelper (uint16_t pg, uint16_t port)
-{
-        m_factory.SetTypeId (RdmaClient::GetTypeId ());
-	SetAttribute ("PriorityGroup", UintegerValue (pg));
-	SetAttribute ("Port", UintegerValue (port));
-}
-
-void
-RdmaServerHelper::SetAttribute (std::string name, const AttributeValue &value)
-{
-        m_factory.Set(name, value);
-}
-
-ApplicationContainer
-RdmaServerHelper::Install (NodeContainer c)
-{
-        ApplicationContainer apps;
-        for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
-        {
-                Ptr<Node> node = *i;
-                m_server = m_factory.Create<AnalysisServer> ();
-                node->AddApplication(m_server);
-                apps.Add(m_server);
-        }
-        return apps;
-}
-
-Ptr<AnalysisServer>
-RdmaServerHelper::GetServer (void)
-{
-        return m_server;
-}
-
-
-
-*/
 
 RdmaClientHelper::RdmaClientHelper ()
 {

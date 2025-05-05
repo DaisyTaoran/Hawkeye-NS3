@@ -2,6 +2,8 @@
 #define SWITCH_NODE_H
 
 #include <unordered_map>
+#include <vector>
+#include <set>
 #include <ns3/node.h>
 #include "qbb-net-device.h"
 #include "switch-mmu.h"
@@ -56,15 +58,25 @@ class SwitchNode : public Node{
 	};
 	
 	struct FlowTelemetryData{	// 流水平遥测数据[五元组哈希值]
-		uint16_t minSeq;           	// 16-bit min_seq		序列号范围
-		uint16_t maxSeq;           	// 16-bit max_seq		序列号范围
-		uint32_t packetNum;		// 32-bit packet_num		数据包数量
-		uint32_t enqQdepth;		// 32-bit enq_q_depth		总排队深度
-		uint32_t pfcPausedPacketNum;	// 32-bit pfc_paused_packet_num	PFC暂停包数量
+		uint16_t minSeq;           			
+		uint16_t maxSeq;           			
+		uint32_t packetFwdNum;			
+		uint32_t enqQdepth;		
+		uint32_t pfcPausedPacketNum;		
+		uint32_t totalFwdBytes, totalBwdBytes; 
+		uint32_t ackCount, nackCount;
+		int flowWeight, nodeWeight;
 
-		FiveTuple flowTuple;		// 5-tuple			五元组
-		uint64_t lastTimeStep;		// last timestep
+		FiveTuple flowTuple;					
+		uint64_t lastTimeStep;				
+		float startTimeSeconds;					
+		float endTimeSeconds;			
+		float durationSeconds;		
 	};
+	uint64_t m_lastUpdateWeight = 0;
+	int m_flowWeight[flowEntryNum];
+	std::vector<int> m_nodeWeight;
+	//std::set<uint32_t> nodeHaveCount;
 	struct PortTelemetryData{	// 端口水平遥测数据[端口号]
 		uint32_t enqQdepth;		// 32-bit enq_q_depth		出口队列长度
 		uint32_t pfcPausedPacketNum;	//				PFC暂停包数量
@@ -87,25 +99,27 @@ protected:
 private:
 	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);				// 根据目的ip等，返回下一跳出口的端口号
 	int GetOutDevToAnalysis();
-	void SendToDev(Ptr<Packet>p, CustomHeader &ch);					// 从队列中取出数据包并发送。根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
-	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	// 计算hash值。
-	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				// 尝试设置暂停状态，并广播发送pfc Pause包。
-	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			// 尝试取消暂停状态，并广播发送pfc Resume包。
+	void SendToDev(Ptr<Packet>p, CustomHeader &ch);					// 从队列中取出数据包并发送，更新各类遥测数据和端口字节数据
+	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);	
+	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);				
+	void CheckAndSendResume(uint32_t inDev, uint32_t qIndex);			
 	void SendSignalToAnalysis();
 	// RDMA NPA
 	static uint32_t FiveTupleHash(const FiveTuple &fiveTuple);
 	static uint32_t GetEpochIdx();
+	void UpdateFlowWeight();
 
 public:
-	Ptr<SwitchMmu> m_mmu;		// 可能是内存管理单元
+	Ptr<SwitchMmu> m_mmu;		
 
 	static TypeId GetTypeId (void);
 	SwitchNode();
 	void SetEcmpSeed(uint32_t seed);
-	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);	// 在IP路由表的dstAddr.ip项中，加入一个值intf_idx
+	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);	
 	void ClearTable();
-	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch); // 根据数据包，更新下一跳端口的各类遥测数据和端口字节数据
-	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);		   // 通知交换机，数据包p已经从队列中出队
+	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch); // 更新数据包下一跳端口的各类遥测数据和端口字节数据
+	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);		  
+	void WriteFlowEntry(uint32_t idx,uint32_t epoch,uint32_t flowid);
 
 	// for approximate calc in PINT
 	int logres_shift(int b, int l);
@@ -113,7 +127,7 @@ public:
 
 	// for RDMA NPA detect
 	FILE *fp_telemetry = NULL;	// 文件名为telemetry_x.txt，其中x=node_number，在third.cc中有定义
-	
+	FILE *fp_flowdata = NULL;	
 	Ipv4Address m_analysis_addr;
 };
 

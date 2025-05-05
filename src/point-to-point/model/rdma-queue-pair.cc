@@ -87,11 +87,16 @@ void RdmaQueuePair::SetVarWin(bool v){
 	m_var_win = v;
 }
 
-void RdmaQueuePair::SetAppNotifyCallback(Callback<void> notifyAppFinish){
+void RdmaQueuePair::SetAppNotifyCallback(Callback<void> notifyAppFinish, Callback<Ptr<RdmaQueuePair>> notifyAppSentFinish){
 	m_notifyAppFinish = notifyAppFinish;
+    	m_notifyAppSentFinish = notifyAppSentFinish;
 }
 
-uint64_t RdmaQueuePair::GetBytesLeft(){
+void RdmaQueuePair::SetRate(DataRate rate){
+	m_rate = rate;
+}
+
+uint64_t RdmaQueuePair::GetBytesLeft(){ // snd_nxt=the bytes you have sent. m_size = the bytes you should send in all.
 	return m_size >= snd_nxt ? m_size - snd_nxt : 0;
 }
 
@@ -154,7 +159,7 @@ uint64_t RdmaQueuePair::HpGetCurWin(){
 }
 
 bool RdmaQueuePair::IsFinished(){
-	return snd_una >= m_size;
+	return snd_una >= m_size; // snd_una = the next receive ACK Packet's seqence should be snd_una
 }
 
 /*********************

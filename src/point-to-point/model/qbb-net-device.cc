@@ -261,7 +261,12 @@ namespace ns3 {
 		if (!m_linkUp) return; // if link is down, return
 		if (m_txMachineState == BUSY) return;	// Quit if channel busy, can't deal with new trans
 		Ptr<Packet> p;
-		if (m_node->GetNodeType() == 0){
+		if (m_node->GetNodeType() == 0){ 
+		        p = m_queue->DequeueRR(m_paused);
+		        if(p != 0){ // TODO:signal that from analys to switch
+		                TransmitStart(p);
+		                return;
+		        }
 			int qIndex = m_rdmaEQ->GetNextQindex(m_paused);
 			if (qIndex != -1024){
 				if (qIndex == -1){ // high prio
@@ -304,14 +309,14 @@ namespace ns3 {
 				uint16_t protocol = 0;
 				ProcessHeader(packet, protocol);
 				packet->RemoveHeader(h);
-				FlowIdTag t;
+				//FlowIdTag t;
 				uint32_t qIndex = m_queue->GetLastQueue();
 				if (qIndex == 0){//this is a pause or cnp, send it immediately!
 					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);      // 通知交换机，数据包p已经从端口队列中出队
-					p->RemovePacketTag(t);
+					//p->RemovePacketTag(t);
 				}else{
 					m_node->SwitchNotifyDequeue(m_ifIndex, qIndex, p);      // 通知交换机，数据包p已经从端口队列中出队
-					p->RemovePacketTag(t);
+					//p->RemovePacketTag(t);
 				}
 				m_traceDequeue(p, qIndex);
 				TransmitStart(p);
@@ -381,7 +386,10 @@ namespace ns3 {
 			}
 		}else { // non-PFC packets (data, ACK, NACK, CNP...)
 			if (m_node->GetNodeType() > 0){ // switch
-				packet->AddPacketTag(FlowIdTag(m_ifIndex));
+			        FlowIdTag oldTag;
+                                if (packet->PeekPacketTag(oldTag))
+                                        packet->RemovePacketTag(oldTag);
+				packet->AddPacketTag(FlowIdTag(m_ifIndex)); // m_ifindex = node.addDevice(), = m_devices.size()
 				m_node->SwitchReceiveFromDevice(this, packet, ch);
 			}else { // NIC
 				// send to RdmaHw
@@ -453,6 +461,7 @@ namespace ns3 {
 		ProcessHeader(p, temp);
 		p->RemoveHeader(ipv4h);
 		p->AddHeader(ch);
+		
 		SwitchSend(0, p, ch);
 	}
 	
@@ -471,18 +480,20 @@ namespace ns3 {
                 // 从队列0处发送数据包p，并传递自定义头部ch
 		CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
 		p->PeekHeader(ch); // Deserialize ppp and ipv4 to ch
-		ch.sip = m_node->GetId();
+		//ch.sip = m_node->GetId();
 		ch.headerType |= CustomHeader::L4_Header;
-		//ch.signal.congestionPort = 7;
+		ch.signal.congestionPort = m_node->GetId();
 		ch.signal.epochID = epoch;
 		ch.signal.flowRate = rate;
-		//ch.signal.pfcOff = 1;
+		ch.signal.pfcOff = 1;
 		ch.signal.lastTimeStep = (uint32_t)(Simulator::Now().GetTimeStep() >> 5);
 		uint16_t temp;
 		ProcessHeader(p, temp);// remove ppp header and get eth(protocol)
 		p->RemoveHeader(ipv4h);
 		p->AddHeader(ch);
+		
 		SwitchSend(0, p, ch);
+		
 	}
 
 	bool
